@@ -1,9 +1,10 @@
 {
   "version": 2,
   "outputDirectory": "public",
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/admin", "dest": "/admin/index.html" },
-    { "src": "/(.*)", "dest": "/$1" }
+  "redirects": [
+    { "source": "/admin", "destination": "/admin/", "permanent": false }
+  ],
+  "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/:path*" }
   ]
 }
