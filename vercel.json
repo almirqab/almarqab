@@ -1,8 +1,7 @@
 {
-  "version": 2,
-  "rewrites": [
-    { "source": "/admin",      "destination": "/public/admin/index.html" },
-    { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/",           "destination": "/public/index.html" }
-  ]
+ "version": 2,
+ "outputDirectory": "public",
+ "rewrites": [
+   { "source": "/api/:path*", "destination": "/api/:path*" }
+ ]
 }
