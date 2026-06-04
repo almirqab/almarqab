@@ -1,13 +1,14 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "public/**/*", "use": "@vercel/static" },
-    { "src": "api/*.js", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" },
-    { "src": "/admin/(.*)", "dest": "public/admin/$1" },
-    { "src": "/admin", "dest": "public/admin/index.html" },
-    { "src": "/(.*)", "dest": "public/$1" }
+  "functions": {
+    "api/submissions.js": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "rewrites": [
+    { "source": "/js/:path*",  "destination": "/public/js/:path*" },
+    { "source": "/admin",      "destination": "/public/admin/index.html" },
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/",           "destination": "/public/index.html" }
   ]
 }
