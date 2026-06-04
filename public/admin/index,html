@@ -458,11 +458,20 @@ button { cursor:pointer; }
 <div id="tc"></div>
 
 <script>
-var CFG = {
+/* ── الإعدادات: تُحفظ في localStorage وتبقى بعد الريفرش ── */
+var CFG_DEFAULTS = {
   name:"المرقاب الذهبي", icon:"م", broker:"المرقاب الذهبي",
   user:"admin", pass:"1234", wa:"0500000000", url:"", color:"#C9A84C",
   welcome:"السلام عليكم!\n\nمن {broker}.\nلو عندك عقار للبيع او الإيجار أرسل بياناته:\n{url}\n\nنتواصل معك قريباً"
 };
+function loadCFG() {
+  try {
+    var saved = localStorage.getItem("almarqab_cfg");
+    if (saved) return Object.assign({}, CFG_DEFAULTS, JSON.parse(saved));
+  } catch(_) {}
+  return Object.assign({}, CFG_DEFAULTS);
+}
+var CFG = loadCFG();
 var SECS = [
   {id:"listings",   l:"عروضي"},
   {id:"submissions",l:"الواردة"},
@@ -858,7 +867,21 @@ function bSt(){
 }
 function pI(v,btn){tI=v;document.querySelectorAll(".ico-b").forEach(function(b){b.classList.remove("on");});btn.classList.add("on");}
 function pCo(v,btn){tCo=v;document.querySelectorAll(".col-d").forEach(function(b){b.classList.remove("on");});btn.classList.add("on");}
-function svSt(){CFG.name=g("s-name").value;CFG.broker=g("s-broker").value;CFG.wa=g("s-wa").value;CFG.url=g("s-url").value;CFG.welcome=g("s-wmsg").value;CFG.user=g("s-user").value;CFG.pass=g("s-pass").value;CFG.icon=tI;CFG.color=tCo;updNav();toast("تم حفظ الإعدادات");}
+function svSt(){
+  CFG.name=g("s-name").value;
+  CFG.broker=g("s-broker").value;
+  CFG.wa=g("s-wa").value;
+  CFG.url=g("s-url").value;
+  CFG.welcome=g("s-wmsg").value;
+  CFG.user=g("s-user").value;
+  CFG.pass=g("s-pass").value;
+  CFG.icon=tI;
+  CFG.color=tCo;
+  /* حفظ في localStorage حتى تبقى بعد الريفرش */
+  try { localStorage.setItem("almarqab_cfg", JSON.stringify(CFG)); } catch(_) {}
+  updNav();
+  toast("تم حفظ الإعدادات ✓");
+}
 
 /* ── API ── */
 function apiGet(type, cb) {
