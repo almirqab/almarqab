@@ -6,9 +6,8 @@
     }
   },
   "rewrites": [
-    { "source": "/js/:path*",  "destination": "/public/js/:path*" },
-    { "source": "/admin",      "destination": "/public/admin/index.html" },
+    { "source": "/admin", "destination": "/public/admin/index.html" },
     { "source": "/api/:path*", "destination": "/api/:path*" },
-    { "source": "/",           "destination": "/public/index.html" }
+    { "source": "/", "destination": "/public/index.html" }
   ]
 }
