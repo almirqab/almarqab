@@ -1,0 +1,14 @@
+{
+  "version": 2,
+  "functions": {
+    "api/submissions.js": {
+      "runtime": "nodejs20.x"
+    }
+  },
+  "rewrites": [
+    { "source": "/js/:path*",  "destination": "/public/js/:path*" },
+    { "source": "/admin",      "destination": "/public/admin/index.html" },
+    { "source": "/api/:path*", "destination": "/api/:path*" },
+    { "source": "/",           "destination": "/public/index.html" }
+  ]
+}
