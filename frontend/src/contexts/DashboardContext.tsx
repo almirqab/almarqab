@@ -13,6 +13,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   const [requests, setRequests] = useState<RequestItem[]>([])
   const [officeSettings, setOfficeSettings] = useState<OfficeSettings>(defaultOfficeSettings)
   const [loading, setLoading] = useState(true)
+  const [cloudInfo, setCloudInfo] = useState<{ lastSync: string | null; lastResult: string; pushing: boolean }>({ lastSync: null, lastResult: '', pushing: false })
   const clientsRef = useRef(clients)
   const propertiesRef = useRef(properties)
   const requestsRef = useRef(requests)
@@ -147,12 +148,13 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         // Update title with unread count
         document.title = newCount > 0 ? `(${newCount}) المرقاب الذهبي` : 'المرقاب الذهبي'
       } catch (err) { console.error('auto-pull', err) }
-    }, 60000)
+    }, 8000)
     return () => clearInterval(id)
   }, [])
 
   const push = useCallback(async (data?: { clients?: ClientItem[]; properties?: PropertyItem[]; requests?: RequestItem[] }): Promise<boolean> => {
     try {
+      setCloudInfo(prev => ({ ...prev, pushing: true }))
       let c: ClientItem[] | undefined, p: PropertyItem[] | undefined, r: RequestItem[] | undefined
       let s: OfficeSettings | undefined
       if (data) {
@@ -163,9 +165,12 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         const [dc, dp, dr, ds] = await Promise.all([DB.getAllClients(), DB.getAllProperties(), DB.getAllRequests(), DB.getSettings()])
         if (dc.length) c = dc; if (dp.length) p = dp; if (dr.length) r = dr; s = ds ?? defaultOfficeSettings
       }
-      return await Cloud.pushToCloud({ clients: c, properties: p, requests: r, settings: s, version: 0 })
-    } catch (err) { console.error('push failed', err); return false }
+      const ok = await Cloud.pushToCloud({ clients: c, properties: p, requests: r, settings: s, version: 0 })
+      setCloudInfo({ lastSync: new Date().toISOString(), lastResult: ok ? 'تم الرفع' : 'فشل الرفع', pushing: false })
+      return ok
+    } catch (err) { console.error('push failed', err); setCloudInfo(prev => ({ ...prev, pushing: false })); return false }
   }, [])
+
 
   const nextId = () => Number(crypto.randomUUID().replace(/\D/g, '').slice(0, 15)) || Date.now()
 
@@ -258,7 +263,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     if (!found.propertyTitle || !found.propertyCity || !found.propertyPrice || !found.propertyArea) {
       throw new Error('الطلب لا يحتوي على بيانات العقار المطلوبة للقبول')
     }
-    const item: PropertyItem = { id: nextId(), title: found.propertyTitle ?? '', district: found.propertyDistrict ?? '', city: found.propertyCity ?? '', price: found.propertyPrice ?? '', type: (found.propertyType ?? found.type) as PropertyType, status: 'متاح', area: found.propertyArea ?? '', rooms: found.propertyRooms ?? '', locationUrl: found.propertyLocationUrl ?? '', orientation: found.propertyOrientation as any, streetWidth: found.propertyStreetWidth ?? '', floor: found.propertyFloor ?? '', floors: found.propertyFloors ?? '', pool: found.propertyPool ?? '', finishing: found.propertyFinishing ?? '', parking: found.propertyParking ?? '', description: found.propertyDescription ?? '', ownerName: found.clientName, ownerPhone: found.clientPhone ?? '', ownerType: found.clientType ?? 'مالك', photos: found.propertyPhotos }
+    const item: PropertyItem = { id: nextId(), title: found.propertyTitle ?? '', district: found.propertyDistrict ?? '', city: found.propertyCity ?? '', price: found.propertyPrice ?? '', type: (found.propertyType ?? found.type) as PropertyType, status: 'متاح', visible: true, area: found.propertyArea ?? '', rooms: found.propertyRooms ?? '', locationUrl: found.propertyLocationUrl ?? '', orientation: found.propertyOrientation as any, streetWidth: found.propertyStreetWidth ?? '', floor: found.propertyFloor ?? '', floors: found.propertyFloors ?? '', pool: found.propertyPool ?? '', finishing: found.propertyFinishing ?? '', parking: found.propertyParking ?? '', description: found.propertyDescription ?? '', ownerName: found.clientName, ownerPhone: found.clientPhone ?? '', ownerType: found.clientType ?? 'مالك', photos: found.propertyPhotos }
     const exists = propertiesRef.current.some((p) => p.title === item.title && p.district === item.district && p.city === item.city)
     if (exists) throw new Error('العقار موجود مسبقاً في قائمة العقارات')
     if (!await push({ properties: [item, ...propertiesRef.current], requests: requestsRef.current.filter((r) => r.id !== id) })) throw new Error('فشلت مزامنة البيانات مع السحابة')
@@ -295,8 +300,37 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setRequests([])
     setOfficeSettings(defaultOfficeSettings)
     localStorage.setItem('dashboard_reset_done', 'true')
-    try { await push({ clients: [], properties: [], requests: [] }) } catch { void 0 }
-  }, [push])
+    // Don't push empty arrays to cloud — cloud data stays intact until user explicitly overwrites
+  }, [])
+
+  const forcePushToCloud = useCallback(async (): Promise<boolean> => {
+    try {
+      const [dc, dp, dr, ds] = await Promise.all([DB.getAllClients(), DB.getAllProperties(), DB.getAllRequests(), DB.getSettings()])
+      const c = dc.length ? dc : undefined
+      const p = dp.length ? dp : undefined
+      const r = dr.length ? dr : undefined
+      const s = ds ?? defaultOfficeSettings
+      setCloudInfo(prev => ({ ...prev, pushing: true }))
+      const ok = await Cloud.pushToCloud({ clients: c, properties: p, requests: r, settings: s, version: 0 })
+      setCloudInfo({ lastSync: new Date().toISOString(), lastResult: ok ? 'تم رفع جميع البيانات' : 'فشل الرفع', pushing: false })
+      return ok
+    } catch (err) { console.error('forcePush', err); setCloudInfo(prev => ({ ...prev, pushing: false })); return false }
+  }, [])
+
+  const forcePullFromCloud = useCallback(async (): Promise<{ ok: boolean; count: number }> => {
+    try {
+      const data = await Cloud.pullFromCloud()
+      if (!data) return { ok: false, count: 0 }
+      await DB.clearAll()
+      if (data.clients) { for (const c of data.clients) { await DB.addClient(c as ClientItem) }; setClients(data.clients as ClientItem[]) }
+      if (data.properties) { for (const p of data.properties) { await DB.addProperty(p as PropertyItem) }; setProperties(data.properties as PropertyItem[]) }
+      if (data.requests) { for (const r of data.requests) { await DB.addRequest(r as RequestItem) }; setRequests(data.requests as RequestItem[]) }
+      if (data.settings) { await DB.saveSettings(data.settings as OfficeSettings); setOfficeSettings(data.settings as OfficeSettings) }
+      const count = (data.clients?.length ?? 0) + (data.properties?.length ?? 0) + (data.requests?.length ?? 0)
+      setCloudInfo({ lastSync: new Date().toISOString(), lastResult: `تم سحب ${count} عنصر`, pushing: false })
+      return { ok: true, count }
+    } catch (err) { console.error('forcePull', err); setCloudInfo(prev => ({ ...prev, pushing: false })); return { ok: false, count: 0 } }
+  }, [])
 
   const syncFromCloud = useCallback(async () => {
     try {
@@ -339,13 +373,14 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(() => ({
-    clients, properties, requests, officeSettings, loading,
+    clients, properties, requests, officeSettings, loading, cloudInfo,
     addClient, deleteClient, updateClient,
     addProperty, updateProperty, updatePropertyStatus, deleteProperty,
     addRequest, updateRequest, approveRequest, convertRequestToProperty, rejectRequest, deleteRequest,
     setOfficeSettings: setOfficeSettingsWrapper, submitRequest, resetAll,
     syncFromCloud, syncToCloud: push,
-  }), [clients, properties, requests, officeSettings, loading, syncFromCloud, push])
+    forcePushToCloud, forcePullFromCloud,
+  }), [clients, properties, requests, officeSettings, loading, cloudInfo, syncFromCloud, push, forcePushToCloud, forcePullFromCloud])
 
   if (loading) {
     return (

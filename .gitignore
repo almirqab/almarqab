@@ -2,3 +2,7 @@ node_modules/
 .vercel
 dist/
 .env.local
+*.zip
+.netlify/
+*.log
+.DS_Store

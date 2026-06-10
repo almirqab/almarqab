@@ -66,6 +66,7 @@ export interface PropertyItem {
   ownerPhone: string
   ownerType: 'مالك' | 'وكيل'
   locationUrl?: string
+  visible?: boolean
   orientation?: Orientation
   streetWidth?: string
   floor?: string
@@ -94,4 +95,5 @@ export interface OfficeSettings {
   crNumber: string
   whatsapp: string
   address: string
+  showPublicProperties?: boolean
 }

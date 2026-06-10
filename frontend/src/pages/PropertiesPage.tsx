@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useState } from 'react'
-import { Building2, Edit3, Eye, Filter, ImagePlus, Plus, Trash2, X } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { Building2, Edit3, Eye, EyeOff, Filter, ImagePlus, Loader2, Plus, Share2, Trash2, X } from 'lucide-react'
 import { Field, Modal, Toast } from '../components/ui'
 import { PhotoGallery } from '../components/PhotoGallery'
 import { useDashboard } from '../contexts/useDashboard'
 import { finishingOptions, orientationOptions, poolOptions, typeFieldLabels, typeFieldsMap } from '../lib/type-fields'
 import { useDebounce } from '../utils/useDebounce'
+import { toImageUrl } from '../lib/blob'
 import type { TypeField } from '../lib/type-fields'
 import type { PropertyItem, PropertyStatus, PropertyType } from '../types/dashboard'
 
@@ -19,7 +20,8 @@ export function PropertiesPage() {
   const [f, setF] = useState<any>({ title:'', type:'', customType:'', status:'متاح', city:'', district:'', price:'', area:'', rooms:'', floor:'', floors:'', orientation:'', streetWidth:'', pool:'', finishing:'', parking:'', locationUrl:'', description:'', ownerName:'', ownerPhone:'', ownerType:'مالك' })
   const [add, setAdd] = useState(false)
   const [view, setView] = useState<PropertyItem|null>(null)
-  const [photos, setPhotos] = useState<string[]>([]); const [uploadingPhoto, setUploadingPhoto] = useState(false)
+  const [photos, setPhotos] = useState<string[]>([]); const [uploadingPhoto, setUploadingPhoto] = useState(false); const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({}); const [uploadErrors, setUploadErrors] = useState<string[]>([]); const [previewTypes, setPreviewTypes] = useState<Record<string, string>>({}); const fileInputRef = useRef<HTMLInputElement>(null)
+  const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm']; const MAX_SIZE = 15 * 1024 * 1024
   const [toast, setToast] = useState(''); const [toastOpen, setToastOpen] = useState(false)
   const [loading, setLoading] = useState<Record<string, boolean>>({})
   const [filter, setFilter] = useState({ type:'', city:'', status:'' as PropertyStatus|'', text:'' })
@@ -62,22 +64,76 @@ export function PropertiesPage() {
     return <span className="badge" style={{background:m.bg,color:m.color}}>{s}</span>
   }
 
+  const validateFile = (file: File): string | null => {
+    if (!ALLOWED_TYPES.includes(file.type)) return 'نوع الملف غير مدعوم. الأنواع: JPG, PNG, WebP, GIF, MP4'
+    if (file.size > MAX_SIZE) return 'الملف كبير جداً. الحد الأقصى 15 ميجابايت'
+    return null
+  }
+
   const uploadPhoto = async (file: File) => {
     if (ld('upload')) return
+    const err = validateFile(file)
+    if (err) { setUploadErrors(prev => [...prev, err]); return }
+
     lds('upload')(true)
     setUploadingPhoto(true)
+    setUploadErrors(prev => prev.filter(e => e !== err))
+
+    const id = crypto.randomUUID()
+    setUploadProgress(prev => ({ ...prev, [id]: 0 }))
+
+    const preview = URL.createObjectURL(file)
+    setPhotos(prev => [...prev, preview])
+    setPreviewTypes(prev => ({ ...prev, [preview]: file.type }))
+
     try {
       const key = import.meta.env.VITE_SYNC_API_KEY || 'almrqab-sync-key-2026'
       const formData = new FormData()
       formData.append('file', file)
-      const res = await fetch('/api/upload', { method: 'POST', headers: { 'x-api-key': key }, body: formData })
-      if (!res.ok) throw new Error('فشل الرفع')
-      const { url } = await res.json()
-      setPhotos(prev => [...prev, url])
-    } catch { setToast('فشل رفع الصورة'); setToastOpen(true) }
+
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', '/api/upload')
+      xhr.setRequestHeader('x-api-key', key)
+
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) {
+          setUploadProgress(prev => ({ ...prev, [id]: Math.round((e.loaded / e.total) * 100) }))
+        }
+      }
+
+      const result = await new Promise<{ url: string }>((resolve, reject) => {
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            try { resolve(JSON.parse(xhr.responseText)) } catch { reject(new Error('فشل تحليل الرد')) }
+          } else {
+            try { const r = JSON.parse(xhr.responseText); reject(new Error(r.error || 'فشل الرفع')) } catch { reject(new Error('فشل الرفع')) }
+          }
+        }
+        xhr.onerror = () => reject(new Error('فشل الاتصال'))
+        xhr.onabort = () => reject(new Error('تم إلغاء الرفع'))
+        xhr.send(formData)
+      })
+
+      setPhotos(prev => prev.map(p => p === preview ? result.url : p))
+      URL.revokeObjectURL(preview)
+      setPreviewTypes(prev => { const n = { ...prev }; delete n[preview]; return n })
+    } catch (e) {
+      setPhotos(prev => prev.filter(p => p !== preview))
+      URL.revokeObjectURL(preview)
+      setPreviewTypes(prev => { const n = { ...prev }; delete n[preview]; return n })
+      setUploadErrors(prev => [...prev, e instanceof Error ? e.message : 'فشل رفع الملف'])
+      setToast('فشل رفع الملف'); setToastOpen(true)
+    }
+    setUploadProgress(prev => { const n = { ...prev }; delete n[id]; return n })
     setUploadingPhoto(false); lds('upload')(false)
   }
-  const removePhoto = (idx: number) => setPhotos(prev => prev.filter((_, i) => i !== idx))
+  const removePhoto = (idx: number) => {
+    setPhotos(prev => {
+      const url = prev[idx]
+      if (url?.startsWith('blob:')) { URL.revokeObjectURL(url); setPreviewTypes(p => { const n = { ...p }; delete n[url]; return n }) }
+      return prev.filter((_, i) => i !== idx)
+    })
+  }
 
   const saveNew = async () => {
     if (ld('save')) return
@@ -85,8 +141,8 @@ export function PropertiesPage() {
     const t = f.customType || f.type
     if (!f.title?.trim() || !f.price?.trim() || !f.area?.trim() || !t) { setToast('املأ الحقول المطلوبة'); setToastOpen(true); lds('save')(false); return }
     try {
-      await addProperty({ title:f.title.trim(), type:t, status:f.status as PropertyStatus, city:f.city||'', district:f.district?.trim()||'', price:f.price.trim(), area:f.area.trim(), rooms:f.rooms?.trim()||'', floor:f.floor||'', floors:f.floors||'', orientation:f.orientation||undefined, streetWidth:f.streetWidth||'', pool:f.pool||'', finishing:f.finishing||'', parking:f.parking||'', locationUrl:f.locationUrl?.trim()||'', description:f.description?.trim()||'', ownerName:f.ownerName?.trim()||'', ownerPhone:f.ownerPhone?.trim()||'', ownerType:f.ownerType||'مالك', photos: photos.length ? photos : undefined })
-      setAdd(false); setF({ title:'',type:'',customType:'',status:'متاح',city:'',district:'',price:'',area:'',rooms:'',floor:'',floors:'',orientation:'',streetWidth:'',pool:'',finishing:'',parking:'',locationUrl:'',description:'',ownerName:'',ownerPhone:'',ownerType:'مالك' }); setPhotos([])
+      await addProperty({ title:f.title.trim(), type:t, status:f.status as PropertyStatus, visible:true, city:f.city||'', district:f.district?.trim()||'', price:f.price.trim(), area:f.area.trim(), rooms:f.rooms?.trim()||'', floor:f.floor||'', floors:f.floors||'', orientation:f.orientation||undefined, streetWidth:f.streetWidth||'', pool:f.pool||'', finishing:f.finishing||'', parking:f.parking||'', locationUrl:f.locationUrl?.trim()||'', description:f.description?.trim()||'', ownerName:f.ownerName?.trim()||'', ownerPhone:f.ownerPhone?.trim()||'', ownerType:f.ownerType||'مالك', photos: photos.length ? photos : undefined })
+      setAdd(false); setF({ title:'',type:'',customType:'',status:'متاح',city:'',district:'',price:'',area:'',rooms:'',floor:'',floors:'',orientation:'',streetWidth:'',pool:'',finishing:'',parking:'',locationUrl:'',description:'',ownerName:'',ownerPhone:'',ownerType:'مالك' }); setPhotos([]); setPreviewTypes({})
       setToast('تمت إضافة العقار'); setToastOpen(true)
     } catch { setToast('فشل إضافة العقار'); setToastOpen(true) }
     lds('save')(false)
@@ -99,7 +155,7 @@ export function PropertiesPage() {
     if (!f.title?.trim() || !f.price?.trim() || !f.area?.trim() || !t || !f.id) { setToast('املأ الحقول المطلوبة'); setToastOpen(true); lds('save')(false); return }
     try {
       await updateProperty(f.id, { title:f.title.trim(), type:t, status:f.status as PropertyStatus, city:f.city||'', district:f.district?.trim()||'', price:f.price.trim(), area:f.area.trim(), rooms:f.rooms?.trim()||'', floor:f.floor||'', floors:f.floors||'', orientation:f.orientation||undefined, streetWidth:f.streetWidth||'', pool:f.pool||'', finishing:f.finishing||'', parking:f.parking||'', locationUrl:f.locationUrl?.trim()||'', description:f.description?.trim()||'', ownerName:f.ownerName?.trim()||'', ownerPhone:f.ownerPhone?.trim()||'', ownerType:f.ownerType||'مالك', photos: photos.length ? photos : undefined })
-      setAdd(false); setF({ title:'',type:'',customType:'',status:'متاح',city:'',district:'',price:'',area:'',rooms:'',floor:'',floors:'',orientation:'',streetWidth:'',pool:'',finishing:'',parking:'',locationUrl:'',description:'',ownerName:'',ownerPhone:'',ownerType:'مالك' }); setPhotos([])
+      setAdd(false); setF({ title:'',type:'',customType:'',status:'متاح',city:'',district:'',price:'',area:'',rooms:'',floor:'',floors:'',orientation:'',streetWidth:'',pool:'',finishing:'',parking:'',locationUrl:'',description:'',ownerName:'',ownerPhone:'',ownerType:'مالك' }); setPhotos([]); setPreviewTypes({})
       setToast('تم تحديث العقار'); setToastOpen(true)
     } catch { setToast('فشل تحديث العقار'); setToastOpen(true) }
     lds('save')(false)
@@ -164,21 +220,35 @@ export function PropertiesPage() {
           <Field label="رابط الموقع"><input onChange={e=>setF({...f,locationUrl:e.target.value})} value={f.locationUrl} placeholder="https://maps.google.com/..." /></Field>
         </div>
         {typeFields(f.type)}
-        <h2 className="text-lg font-bold mt-3" style={{color:'#2C2418'}}>صور العقار</h2>
-        <p className="text-xs" style={{color:'#7A6B55'}}>صور العقار (اختياري)</p>
+        <h2 className="text-lg font-bold mt-3" style={{color:'#2C2418'}}>صور وفيديو العقار</h2>
+        <p className="text-xs" style={{color:'#7A6B55'}}>صور العقار (يدعم JPG, PNG, WebP, GIF, MP4 - حد أقصى 15 MB)</p>
         <div className="flex flex-wrap gap-3">
-          {photos.map((url, idx) => (
-            <div key={idx} className="relative w-24 h-24 rounded-xl overflow-hidden border border-[#E0D0B8]">
-              <img src={url} alt={`صورة ${idx + 1}`} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
-              <button type="button" onClick={() => removePhoto(idx)} className="absolute top-1 left-1 w-6 h-6 flex items-center justify-center rounded-full bg-red-500 text-white" style={{fontSize:'12px'}}><X size={12} /></button>
-            </div>
-          ))}
+          {photos.map((url, idx) => {
+            const progress = Object.values(uploadProgress).find(p => p > 0 && p < 100)
+            const isPending = url.startsWith('blob:')
+            return (
+              <div key={idx} className="relative w-24 h-24 rounded-xl overflow-hidden border border-[#E0D0B8]">
+                <img src={toImageUrl(url)} alt={`صورة ${idx + 1}`} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                {isPending && progress != null && (
+                  <div className="absolute inset-0 flex items-center justify-center" style={{background:'rgba(0,0,0,0.5)'}}>
+                    <div className="text-center">
+                      <Loader2 size={16} className="animate-spin mx-auto mb-1" style={{color:'#C5A059'}} />
+                      <div className="w-14 h-1.5 rounded-full overflow-hidden mx-auto" style={{background:'rgba(255,255,255,0.2)'}}>
+                        <div className="h-full rounded-full transition-all" style={{width:`${progress}%`,background:'#C5A059'}} />
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <button type="button" onClick={() => removePhoto(idx)} className="absolute top-1 left-1 w-6 h-6 flex items-center justify-center rounded-full bg-red-500 text-white" style={{fontSize:'12px'}}><X size={12} /></button>
+              </div>
+            )})}
           <label className="w-24 h-24 rounded-xl border-2 border-dashed border-[#C5A059] flex flex-col items-center justify-center cursor-pointer hover:bg-[#C5A059]/5 transition" style={{background:'rgba(197,160,89,0.05)'}}>
-            <ImagePlus size={20} style={{color:'#C5A059'}} />
-            <span className="text-xs mt-1" style={{color:'#C5A059'}}>{uploadingPhoto ? '...' : 'إضافة'}</span>
-            <input type="file" accept="image/*" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) uploadPhoto(file); e.target.value = '' }} disabled={uploadingPhoto} />
+            {uploadingPhoto ? <Loader2 size={20} className="animate-spin" style={{color:'#C5A059'}} /> : <ImagePlus size={20} style={{color:'#C5A059'}} />}
+            <span className="text-xs mt-1" style={{color:'#C5A059'}}>{uploadingPhoto ? 'جاري الرفع...' : 'إضافة'}</span>
+            <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm" className="hidden" onChange={e => { const file = e.target.files?.[0]; if (file) uploadPhoto(file); e.target.value = '' }} disabled={uploadingPhoto} />
           </label>
         </div>
+        {uploadErrors.length > 0 && <div className="flex flex-col gap-1 mt-2">{uploadErrors.map((err, i) => <span key={i} className="text-xs text-red-500">{err}</span>)}</div>}
         <Field label="الوصف"><textarea onChange={e=>setF({...f,description:e.target.value})} value={f.description} /></Field>
         <div className="flex justify-end gap-2 mt-2">
           <button className="btn btn-outline btn-sm" onClick={()=>setAdd(false)} type="button">إلغاء</button>
@@ -223,6 +293,7 @@ export function PropertiesPage() {
               <div className="flex items-center gap-2 pt-3 border-t border-[#F0E8D8]">
                 <button className="btn btn-ghost btn-sm flex-1" onClick={()=>editProp(p)} type="button"><Edit3 size={14} />تعديل</button>
                 <button className="btn btn-outline btn-sm flex-1" onClick={()=>setView(p)} type="button"><Eye size={14} />عرض</button>
+                <button className="btn btn-sm" style={{background:p.visible === false ? 'rgba(90,78,60,.1)' : 'rgba(61,107,79,.1)', color:p.visible === false ? '#5C4F3E' : '#3D6B4F'}} onClick={async() => { if (ld(`v_${p.id}`)) return; lds(`v_${p.id}`)(true); try { await updateProperty(p.id,{visible:!(p.visible ?? true)}) } catch {}; lds(`v_${p.id}`)(false) }} disabled={ld(`v_${p.id}`)} type="button">{p.visible === false ? <EyeOff size={14} /> : <Eye size={14} />}</button>
                 <button className="btn btn-sm flex-1" style={{background:'rgba(179,58,58,.1)',color:'#B33A3A'}} onClick={()=>delProp(p.id)} type="button"><Trash2 size={14} />حذف</button>
               </div>
             </div>
@@ -242,11 +313,23 @@ export function PropertiesPage() {
             [typeFieldLabels.parking, view.parking||'-'], ['المالك', view.ownerName||'-'],
             ['جوال', view.ownerPhone||'-'], ['الحالة', view.status],
           ].map(([l,v])=>v?<div key={l as string}><span style={{color:'#7A6B55'}}>{l}: </span>{v}</div>:null)}
-          {view.locationUrl && <div className="col-span-2"><span style={{color:'#7A6B55'}}>رابط الموقع: </span><a href={view.locationUrl} target="_blank" rel="noreferrer" style={{color:'#C5A059',textDecoration:'underline',fontSize:'0.85rem'}}>{view.locationUrl}</a></div>}
+          {view.locationUrl && <div className="col-span-2"><span style={{color:'#7A6B55'}}>الموقع: </span><a href={view.locationUrl} target="_blank" rel="noreferrer" style={{color:'#C5A059',textDecoration:'underline',fontSize:'0.85rem'}}>عرض على خرائط Google</a></div>}
         </div>
         {view.description && <p className="text-sm" style={{color:'#5C4F3E'}}>{view.description}</p>}
         <PhotoGallery urls={view.photos} />
-        {view.ownerPhone && <a href={`https://wa.me/966${view.ownerPhone.replace(/\D/g,'').slice(-9)}`} target="_blank" className="btn btn-gold btn-sm w-full" rel="noreferrer">تواصل مع المالك</a>}
+        <div className="flex gap-2">
+          {view.ownerPhone && <a href={`https://wa.me/966${view.ownerPhone.replace(/\D/g,'').slice(-9)}`} target="_blank" className="btn btn-gold btn-sm flex-1" rel="noreferrer">تواصل مع المالك</a>}
+          <button type="button" className="btn btn-outline btn-sm flex-1" onClick={() => {
+            const details = [`*${view.title}*`,`💰 ${view.price}`,`📍 ${view.city} - ${view.district}`,
+              view.area && `📐 ${view.area} م²`, view.rooms && `🛏 ${view.rooms}`,
+              view.description && `\n${view.description}`,
+              view.photos?.length ? `\n📸 ${view.photos.map(p => toImageUrl(p)).join('\n')}` : '',
+              view.locationUrl && `\n📍 ${view.locationUrl}`,
+            ].filter(Boolean).join('\n')
+            if (navigator.share) { navigator.share({ title: view.title, text: details }).catch(() => {}) }
+            else { navigator.clipboard?.writeText(details).then(() => alert('تم نسخ تفاصيل العقار')).catch(() => {}) }
+          }}><Share2 size={14} />مشاركة العقار</button>
+        </div>
       </div>}
     </Modal>
   </div>

@@ -25,6 +25,9 @@ export interface DashboardContextValue {
   resetAll: () => Promise<void>
   syncFromCloud: () => Promise<{ ok: boolean; count: number }>
   syncToCloud: (data?: { clients?: ClientItem[]; properties?: PropertyItem[]; requests?: RequestItem[] }) => Promise<boolean>
+  cloudInfo: { lastSync: string | null; lastResult: string; pushing: boolean }
+  forcePushToCloud: () => Promise<boolean>
+  forcePullFromCloud: () => Promise<{ ok: boolean; count: number }>
 }
 
 export const DashboardContext = createContext<DashboardContextValue | undefined>(undefined)

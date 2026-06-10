@@ -19,6 +19,7 @@ export const initialProperties: PropertyItem[] = [
     price: '2,850,000 ر.س',
     type: 'فيلا' as PropertyType,
     status: 'متاح',
+    visible: true,
     area: '450 م²',
     rooms: '6',
     orientation: 'جنوبي',
@@ -40,6 +41,7 @@ export const initialProperties: PropertyItem[] = [
     price: '1,350,000 ر.س',
     type: 'شقة' as PropertyType,
     status: 'متاح',
+    visible: true,
     area: '200 م²',
     rooms: '4',
     floor: 'الثالثة',
@@ -86,4 +88,5 @@ export const defaultOfficeSettings: OfficeSettings = {
   crNumber: '',
   whatsapp: '',
   address: 'الرياض، المملكة العربية السعودية',
+  showPublicProperties: true,
 }

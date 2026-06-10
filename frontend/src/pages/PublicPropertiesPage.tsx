@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Building2, Home, MapPin, Phone, Search, Filter, X } from 'lucide-react'
+import { toImageUrl } from '../lib/blob'
 
 interface PublicProperty {
   id: number; title: string; district: string; city: string; price: string; type: string; area: string; rooms: string; description: string; ownerName: string; ownerPhone: string; locationUrl?: string; photos?: string[];
@@ -12,6 +13,7 @@ export function PublicPropertiesPage() {
   const [properties, setProperties] = useState<PublicProperty[]>([])
   const [loading, setLoading] = useState(true)
   const [officeName, setOfficeName] = useState('المرقاب الذهبي')
+  const [showPublic, setShowPublic] = useState(true)
   const [search, setSearch] = useState('')
   const [filterCity, setFilterCity] = useState('')
   const [filterType, setFilterType] = useState('')
@@ -20,7 +22,7 @@ export function PublicPropertiesPage() {
   useEffect(() => {
     fetch('/api/public-properties')
       .then(r => r.json())
-      .then(d => { if (d.ok) { setProperties(d.properties); setOfficeName(d.officeName) } })
+      .then(d => { if (d.ok) { setProperties(d.properties); setOfficeName(d.officeName); setShowPublic(d.showPublicProperties !== false) } })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -47,6 +49,8 @@ export function PublicPropertiesPage() {
     </div>
 
     <div className="max-w-6xl mx-auto -mt-6 pb-16 px-4 w-full">
+      {!showPublic ? <div className="text-center py-20"><Building2 size={48} className="mx-auto mb-4" style={{ color: '#D4C5A8' }} /><p className="text-sm" style={{ color: '#7A6B55' }}>عرض العقارات غير مفعل حالياً</p><a href="/" className="btn btn-outline mt-4">العودة للرئيسية</a></div>
+      : <>
       <div className="glass p-4 mb-6">
         <div className="flex items-center gap-2 mb-3">
           <Filter size={14} style={{ color: '#7A6B55' }} />
@@ -94,6 +98,7 @@ export function PublicPropertiesPage() {
             </div>)}
           </div>
       }
+      </>}
     </div>
 
     {sel && <div className="modal-overlay" onClick={() => setSel(null)}>
@@ -105,10 +110,11 @@ export function PublicPropertiesPage() {
         <div className="grid grid-cols-2 gap-3 bg-[#F5F0E8] rounded-xl p-4 text-sm mb-4">
           {[['النوع', sel.type], ['المدينة', sel.city], ['الحي', sel.district], ['السعر', sel.price], ['المساحة', sel.area+' م²'], ['الغرف', sel.rooms||'-']].map(([l,v]) => v ? <div key={l as string}><span style={{ color:'#7A6B55' }}>{l}: </span>{v}</div> : null)}
           {sel.locationUrl && <div className="col-span-2"><span style={{ color:'#7A6B55' }}>الموقع: </span><a href={sel.locationUrl} target="_blank" rel="noreferrer" style={{ color:'#C5A059', textDecoration:'underline', fontSize:'0.85rem' }}>عرض على خرائط Google</a></div>}
+          {(sel.locationUrl && /^https?:\/\/(?:www\.)?(?:maps\.)?(?:google\.[a-z.]+|goo\.gl)\/maps/i.test(sel.locationUrl)) && <div className="col-span-2 rounded-xl overflow-hidden border border-[#E0D0B8]"><iframe src={`https://maps.google.com/maps?q=${encodeURIComponent(sel.locationUrl)}&output=embed&hl=ar`} width="100%" height="200" style={{border:0}} allowFullScreen loading="lazy" title="خريطة الموقع" /></div>}
         </div>
         {sel.description && <p className="text-sm mb-4" style={{ color:'#5C4F3E' }}>{sel.description}</p>}
         {sel.photos && sel.photos.length > 0 && <div className="flex flex-wrap gap-2 mb-4">
-          {sel.photos.map((url, i) => <img key={i} src={url} alt={`صورة ${i+1}`} className="w-20 h-20 rounded-xl object-cover border border-[#E0D0B8]" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />)}
+          {sel.photos.map((url, i) => <img key={i} src={toImageUrl(url)} alt={`صورة ${i+1}`} className="w-20 h-20 rounded-xl object-cover border border-[#E0D0B8]" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />)}
         </div>}
         <div className="flex flex-col gap-2">
           {sel.ownerPhone && <a href={`https://wa.me/966${sel.ownerPhone.replace(/\D/g,'').slice(-9)}`} target="_blank" rel="noreferrer" className="btn btn-gold w-full"><Phone size={16} />تواصل مع المالك عبر واتساب</a>}

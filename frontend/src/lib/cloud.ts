@@ -11,7 +11,7 @@ const CONTENT_JSON = { 'Content-Type': 'application/json', 'x-api-key': API_KEY 
 
 export async function pullFromCloud(): Promise<SyncPayload | null> {
   try {
-    const res = await fetch('/api/sync', { headers: CONTENT_JSON })
+    const res = await fetch(`/api/sync?_=${Date.now()}`, { headers: CONTENT_JSON, cache: 'no-store' })
     if (!res.ok) return null
     const body = await res.json()
     return body.data ?? null

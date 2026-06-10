@@ -25,8 +25,6 @@ function getDB(): Promise<IDBPDatabase<AlmarqabDB>> {
   return dbPromise
 }
 
-export { getDB as getDBInternal }
-
 export async function isDBEmpty(): Promise<boolean> {
   const db = await getDB()
   const [c, p, r, s] = await Promise.all([db.count('clients'), db.count('properties'), db.count('requests'), db.count('settings')])

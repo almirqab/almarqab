@@ -1,21 +1,21 @@
 import { useEffect, useState } from 'react'
-import { CheckCircle2, Cloud, Database, Download, Eye, EyeOff, RefreshCw, Upload, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Cloud, Database, Download, Eye, EyeOff, RefreshCw, Shield, Upload, XCircle } from 'lucide-react'
 import { Field, Toast } from '../components/ui'
 import { useDashboard } from '../contexts/useDashboard'
 import { useAuth } from '../contexts/useAuth'
 
 const checkCloud = async () => {
-  try { const key = import.meta.env.VITE_SYNC_API_KEY || 'almrqab-sync-key-2026'; const r = await fetch('/api/sync', { headers: { 'x-api-key': key } }); return r.ok } catch { return false }
+  try { const key = import.meta.env.VITE_SYNC_API_KEY || 'almrqab-sync-key-2026'; const r = await fetch(`/api/sync?_=${Date.now()}`, { headers: { 'x-api-key': key }, cache: 'no-store' }); if (!r.ok) return null; const d = await r.json(); return d.data ? { ok: true, version: d.data.version, clients: d.data.clients?.length ?? 0, properties: d.data.properties?.length ?? 0, requests: d.data.requests?.length ?? 0 } : { ok: true, version: 0, clients: 0, properties: 0, requests: 0 } } catch { return null }
 }
 
 export function SettingsPage() {
-  const { clients, properties, requests, officeSettings, setOfficeSettings, resetAll, syncFromCloud, syncToCloud } = useDashboard()
+  const { clients, properties, requests, officeSettings, setOfficeSettings, resetAll, syncFromCloud, syncToCloud, cloudInfo, forcePushToCloud, forcePullFromCloud } = useDashboard()
   const { credentials, updateCredentials } = useAuth()
   const [tab, setTab] = useState<'عام'|'الأمان'|'السحابة'|'البيانات'>('عام')
   const [cloudStatus, setCloudStatus] = useState<{ok:boolean;msg:string}>({ok:false,msg:'جاري الفحص...'})
 
-  useEffect(() => { checkCloud().then(ok => setCloudStatus({ok, msg: ok ? 'متصل' : 'غير متصل'})) }, [])
-  const [on, setOn] = useState({ name:'', phone:'', commercial:'', tax:'', falLicense:'', crNumber:'', whatsapp:'', address:'' })
+  useEffect(() => { checkCloud().then(r => { if (r) { setCloudStatus({ok: true, msg: `متصل (v${r.version}) — السحابة: ${r.clients} عميل، ${r.properties} عقار، ${r.requests} طلب`}) } else { setCloudStatus({ok: false, msg: 'غير متصل'}) } }) }, [])
+  const [on, setOn] = useState({ name:'', phone:'', commercial:'', tax:'', falLicense:'', crNumber:'', whatsapp:'', address:'', showPublicProperties: true })
   const [loading, setLoading] = useState<Record<string, boolean>>({})
   const ld = (k: string) => loading[k] || false
   const lds = (k: string) => (v: boolean) => setLoading(p => ({ ...p, [k]: v }))
@@ -24,10 +24,12 @@ export function SettingsPage() {
   const [show, setShow] = useState(false)
   const [to, setTo] = useState(''); const [st, setSt] = useState(false)
   const [resetConfirm, setResetConfirm] = useState(false)
+  const [forcePushConfirm, setForcePushConfirm] = useState(false)
+  const [forcePullConfirm, setForcePullConfirm] = useState(false)
   const doReset = async () => { try { await resetAll() } catch { void 0 }; setResetConfirm(false); setTo('تم إعادة التعيين'); setSt(true); setTimeout(() => window.location.reload(), 1000) }
 
-  useEffect(() => { setOn({ name:officeSettings.name??'', phone:officeSettings.phone??'', commercial:officeSettings.commercial??'', tax:officeSettings.tax??'', falLicense:officeSettings.falLicense??'', crNumber:officeSettings.crNumber??'', whatsapp:officeSettings.whatsapp??'', address:officeSettings.address??'' }) // eslint-disable-line react-hooks/set-state-in-effect
-  }, [])
+  useEffect(() => { setOn({ name:officeSettings.name??'', phone:officeSettings.phone??'', commercial:officeSettings.commercial??'', tax:officeSettings.tax??'', falLicense:officeSettings.falLicense??'', crNumber:officeSettings.crNumber??'', whatsapp:officeSettings.whatsapp??'', address:officeSettings.address??'', showPublicProperties:officeSettings.showPublicProperties !== false }) // eslint-disable-line react-hooks/set-state-in-effect
+  }, [officeSettings])
 
   const saveSettings = async () => {
     if (ld('settings')) return; lds('settings')(true)
@@ -69,8 +71,8 @@ export function SettingsPage() {
     setTo('جاري السحب...'); setSt(true)
     const r = await syncFromCloud()
     setTo(r.ok ? `تم السحب (${r.count} عنصر)` : 'فشل السحب'); setSt(true)
-    const ok = await checkCloud()
-    setCloudStatus({ok, msg: ok ? `آخر مزامنة: ${new Date().toLocaleString('ar-SA')}` : 'غير متصل'})
+    const ck = await checkCloud()
+    if (ck) { setCloudStatus({ok: true, msg: `آخر مزامنة: ${new Date().toLocaleString('ar-SA')} — السحابة: ${ck.clients} عميل، ${ck.properties} عقار، ${ck.requests} طلب`}) } else { setCloudStatus({ok: false, msg: 'غير متصل'}) }
     lds('sync')(false)
   }
   const doSyncUp = async () => {
@@ -78,8 +80,8 @@ export function SettingsPage() {
     setTo('جاري الرفع...'); setSt(true)
     await syncToCloud()
     setTo('تم الرفع'); setSt(true)
-    const ok = await checkCloud()
-    setCloudStatus({ok, msg: ok ? `آخر مزامنة: ${new Date().toLocaleString('ar-SA')}` : 'غير متصل'})
+    const ck = await checkCloud()
+    if (ck) { setCloudStatus({ok: true, msg: `آخر مزامنة: ${new Date().toLocaleString('ar-SA')} — السحابة: ${ck.clients} عميل، ${ck.properties} عقار، ${ck.requests} طلب`}) } else { setCloudStatus({ok: false, msg: 'غير متصل'}) }
     lds('sync')(false)
   }
   const tabs = ['عام','الأمان','السحابة','البيانات'] as const
@@ -106,7 +108,14 @@ export function SettingsPage() {
       <Field label="رقم السجل التجاري (CR)"><input onChange={e=>setOn({...on,crNumber:e.target.value})} value={on.crNumber} placeholder="رقم السجل التجاري" /></Field>
       <Field label="رقم واتساب"><input onChange={e=>setOn({...on,whatsapp:e.target.value})} value={on.whatsapp} placeholder="05xxxxxxxx" /></Field>
       <Field label="العنوان"><input onChange={e=>setOn({...on,address:e.target.value})} value={on.address} placeholder="الرياض، المملكة العربية السعودية" /></Field>
-    </div><div className="flex justify-end mt-5">
+    </div>
+      <div className="flex items-center justify-between p-4 rounded-xl mt-4" style={{background:'rgba(61,107,79,0.05)'}}>
+        <div><p className="text-sm font-medium" style={{color:'#2C2418'}}>عرض العقارات للعامة</p><p className="text-xs" style={{color:'#7A6B55'}}>إظهار/إخفاء صفحة العقارات المتاحة /properties</p></div>
+        <button onClick={()=>setOn({...on,showPublicProperties:!on.showPublicProperties})} className="relative w-12 h-6 rounded-full transition-all" style={{background:on.showPublicProperties ? '#3D6B4F' : '#C5B8A0'}} type="button">
+          <div className="absolute w-5 h-5 rounded-full bg-white shadow-sm transition-all" style={{top:'2px', [on.showPublicProperties ? 'right' : 'left']:'2px'}} />
+        </button>
+      </div>
+    <div className="flex justify-end mt-5">
       <button className="btn btn-primary" onClick={saveSettings} disabled={ld('settings')} type="button"><RefreshCw size={16} />{ld('settings')?'...':'حفظ'}</button>
     </div></div>}
 
@@ -126,15 +135,46 @@ export function SettingsPage() {
 
     {tab==='السحابة' && <div className="glass p-5 flex flex-col gap-4">
       <div className="flex items-center gap-3 mb-2"><Cloud size={20} style={{color:'#3D6B4F'}} /><h3 className="text-sm font-bold" style={{color:'#2C2418'}}>المزامنة السحابية</h3></div>
+
+      {/* Connection status */}
       <div className="flex items-center gap-2 text-sm p-3 rounded-xl" style={{background:cloudStatus.ok?'rgba(61,107,79,0.08)':'rgba(179,58,58,0.08)',color:cloudStatus.ok?'#3D6B4F':'#B33A3A'}}>
         {cloudStatus.ok ? <CheckCircle2 size={16} /> : <XCircle size={16} />}{cloudStatus.msg}</div>
+
+      {/* Local data summary */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        {[{l:'العملاء',v:clients.length},{l:'العقارات',v:properties.length},{l:'الطلبات',v:requests.length}].map(s=><div key={s.l} className="p-2 rounded-lg text-xs" style={{background:'#F5F0E8',color:'#5C4F3E'}}><span className="block font-bold text-sm" style={{color:'#2C2418'}}>{s.v}</span>{s.l}</div>)}
+      </div>
+
+      {/* Last sync info */}
+      {cloudInfo.lastSync && <div className="text-xs p-2 rounded-lg" style={{background:'rgba(61,107,79,0.05)',color:'#5C4F3E'}}>
+        آخر مزامنة: {new Date(cloudInfo.lastSync).toLocaleString('ar-SA')}<br />
+        {cloudInfo.lastResult}
+      </div>}
+
+      {cloudInfo.pushing && <div className="text-xs p-2 rounded-lg" style={{background:'rgba(197,160,89,0.1)',color:'#8B6F3A'}}>جاري المزامنة...</div>}
+
       <p className="text-xs leading-relaxed" style={{color:'#5C4F3E'}}>
-        التزامن تلقائي بالكامل — أي تعديل تسويه (إضافة/تعديل/حذف عميل، عقار، طلب، إعدادات، اسم مستخدم، كلمة مرور) ينحفظ في السحابة بعد ٣ ثواني، ويظهر على جميع الأجهزة أول ما ترجع لها.<br />
+        التزامن تلقائي بالكامل — أي تعديل تسويه ينحفظ في السحابة ويظهر على جميع الأجهزة.
         الأزرار تحت خيار يدوي للطوارئ فقط.
       </p>
+
+      {/* Normal sync buttons */}
       <div className="flex justify-end gap-2">
-        <button className="btn btn-outline btn-sm" onClick={doSyncDown} disabled={ld('sync')} type="button"><Cloud size={14} />{ld('sync')?'...':'سحب يدوي'}</button>
-        <button className="btn btn-outline btn-sm" onClick={doSyncUp} disabled={ld('sync')} type="button"><Upload size={14} />{ld('sync')?'...':'رفع يدوي'}</button>
+        <button className="btn btn-outline btn-sm" onClick={doSyncDown} disabled={ld('sync') || cloudInfo.pushing} type="button"><Cloud size={14} />{ld('sync')?'...':'سحب يدوي'}</button>
+        <button className="btn btn-outline btn-sm" onClick={doSyncUp} disabled={ld('sync') || cloudInfo.pushing} type="button"><Upload size={14} />{ld('sync')?'...':'رفع يدوي'}</button>
+      </div>
+
+      {/* Force sync section */}
+      <div className="h-px" style={{background:'#E0D0B8'}} />
+      <div className="flex items-center gap-2"><Shield size={16} style={{color:'#8B6F3A'}} /><span className="text-xs font-bold" style={{color:'#8B6F3A'}}>خيارات متقدمة — استخدم فقط في حال الضرورة</span></div>
+      <div className="flex justify-end gap-2">
+        {forcePullConfirm
+          ? <div className="flex gap-2 items-center"><span className="text-xs" style={{color:'#B33A3A'}}>استبدال كل البيانات المحلية?</span><button className="btn btn-outline btn-sm" onClick={()=>setForcePullConfirm(false)} type="button">إلغاء</button><button className="btn btn-sm" style={{background:'#8B6F3A',color:'white'}} onClick={async()=>{setForcePullConfirm(false);if(ld('sync'))return;lds('sync')(true);setTo('جاري السحب القسري...');setSt(true);const r=await forcePullFromCloud();setTo(r.ok?`تم السحب القسري (${r.count} عنصر)`:'فشل السحب');setSt(true);lds('sync')(false)}} type="button">تأكيد</button></div>
+          : <button className="btn btn-outline btn-sm" onClick={()=>setForcePullConfirm(true)} disabled={ld('sync')} type="button"><AlertTriangle size={14} />سحب قسري (استبدال كامل)</button>}
+        {forcePushConfirm
+          ? <div className="flex gap-2 items-center"><span className="text-xs" style={{color:'#B33A3A'}}>استبدال بيانات السحابة?</span><button className="btn btn-outline btn-sm" onClick={()=>setForcePushConfirm(false)} type="button">إلغاء</button><button className="btn btn-sm" style={{background:'#8B6F3A',color:'white'}} onClick={async()=>{setForcePushConfirm(false);if(ld('sync'))return;lds('sync')(true);setTo('جاري الرفع القسري...');setSt(true);const ok=await forcePushToCloud();setTo(ok?'تم رفع جميع البيانات' : 'فشل الرفع');setSt(true);lds('sync')(false);if(ok){const ck=await checkCloud();setCloudStatus({ok:!!ck,msg:ck?`متصل (v${ck.version})`:'غير متصل'})}}} type="button">تأكيد</button></div>
+          : <button className="btn btn-outline btn-sm" onClick={()=>setForcePushConfirm(true)} disabled={ld('sync')} type="button"><AlertTriangle size={14} />رفع قسري (استبدال كامل)</button>}
+        <div className="text-xs mt-2" style={{color:'#7A6B55'}}>المزامنة التلقائية كل ٨ ثواني — أي تعديل يظهر على جميع الأجهزة خلال ثوان</div>
       </div>
     </div>}
 
