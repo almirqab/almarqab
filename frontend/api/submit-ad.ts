@@ -22,7 +22,7 @@ export async function POST(req: Request) {
     }
     const id = crypto.randomUUID()
     const blobData = { ...data, _submissionId: id, _submittedAt: new Date().toISOString() }
-    await put(`submissions/${id}.json`, JSON.stringify(blobData), { access: 'private', addRandomSuffix: false })
+    await put(`submissions/${id}.json`, JSON.stringify(blobData), { access: 'private', addRandomSuffix: false, contentType: 'application/json' })
     return Response.json({ ok: true, id })
   } catch (e) {
     return Response.json({ ok: false, error: String(e) }, { status: 500 })

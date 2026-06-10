@@ -5,7 +5,7 @@ import { useDashboard } from '../contexts/useDashboard'
 import { useAuth } from '../contexts/useAuth'
 
 const checkCloud = async () => {
-  try { const key = import.meta.env.VITE_SYNC_API_KEY || 'almrqab-sync-key-2026'; const r = await fetch(`/api/sync?_=${Date.now()}`, { headers: { 'x-api-key': key }, cache: 'no-store' }); if (!r.ok) return null; const d = await r.json(); return d.data ? { ok: true, version: d.data.version, clients: d.data.clients?.length ?? 0, properties: d.data.properties?.length ?? 0, requests: d.data.requests?.length ?? 0 } : { ok: true, version: 0, clients: 0, properties: 0, requests: 0 } } catch { return null }
+  try { const key = import.meta.env.VITE_SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'; const r = await fetch(`/api/sync?_=${Date.now()}`, { headers: { 'x-api-key': key }, cache: 'no-store' }); if (!r.ok) return null; const d = await r.json(); return d.data ? { ok: true, version: d.data.version, clients: d.data.clients?.length ?? 0, properties: d.data.properties?.length ?? 0, requests: d.data.requests?.length ?? 0 } : { ok: true, version: 0, clients: 0, properties: 0, requests: 0 } } catch { return null }
 }
 
 export function SettingsPage() {

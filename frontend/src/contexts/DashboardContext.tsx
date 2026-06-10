@@ -240,7 +240,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   }, [push])
 
   const submitRequest = useCallback(async (request: Omit<RequestItem, 'id' | 'status' | 'date'> & { date?: string }) => {
-    const key = import.meta.env.VITE_SYNC_API_KEY || 'almrqab-sync-key-2026'
+    const key = import.meta.env.VITE_SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
     const res = await fetch('/api/submit-ad', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': key }, body: JSON.stringify(request) })
     if (!res.ok) throw new Error('فشلت مزامنة البيانات مع السحابة')
     // Also add to local state immediately so it appears in dashboard without waiting for auto-pull

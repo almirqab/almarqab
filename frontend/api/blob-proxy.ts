@@ -14,7 +14,7 @@ export async function GET(req: Request) {
     if (!result) return Response.json({ error: 'not found' }, { status: 404 })
 
     const headers: Record<string, string> = {}
-    if (result.blob.contentType) headers['Content-Type'] = result.blob.contentType
+    headers['Content-Type'] = result.blob.contentType || 'application/octet-stream'
     if (result.blob.contentDisposition) headers['Content-Disposition'] = result.blob.contentDisposition
     headers['Cache-Control'] = 'public, max-age=31536000, immutable'
 

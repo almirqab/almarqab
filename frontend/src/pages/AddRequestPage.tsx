@@ -103,7 +103,7 @@ export function AddRequestPage() {
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const key = import.meta.env.VITE_SYNC_API_KEY || 'almrqab-sync-key-2026'
+      const key = import.meta.env.VITE_SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
 
       const xhr = new XMLHttpRequest()
       xhr.open('POST', '/api/upload')

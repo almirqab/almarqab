@@ -87,7 +87,7 @@ export function PropertiesPage() {
     setPreviewTypes(prev => ({ ...prev, [preview]: file.type }))
 
     try {
-      const key = import.meta.env.VITE_SYNC_API_KEY || 'almrqab-sync-key-2026'
+      const key = import.meta.env.VITE_SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
       const formData = new FormData()
       formData.append('file', file)
 
@@ -127,6 +127,7 @@ export function PropertiesPage() {
     setUploadProgress(prev => { const n = { ...prev }; delete n[id]; return n })
     setUploadingPhoto(false); lds('upload')(false)
   }
+  const isVideo = (url: string) => /\.(mp4|webm)$/i.test(url) || previewTypes[url]?.startsWith('video/') || false
   const removePhoto = (idx: number) => {
     setPhotos(prev => {
       const url = prev[idx]
@@ -228,7 +229,11 @@ export function PropertiesPage() {
             const isPending = url.startsWith('blob:')
             return (
               <div key={idx} className="relative w-24 h-24 rounded-xl overflow-hidden border border-[#E0D0B8]">
-                <img src={toImageUrl(url)} alt={`صورة ${idx + 1}`} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                {isVideo(url) ? (
+                  <video src={toImageUrl(url)} className="w-full h-full object-cover" muted autoPlay={false} />
+                ) : (
+                  <img src={toImageUrl(url)} alt={`صورة ${idx + 1}`} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                )}
                 {isPending && progress != null && (
                   <div className="absolute inset-0 flex items-center justify-center" style={{background:'rgba(0,0,0,0.5)'}}>
                     <div className="text-center">
