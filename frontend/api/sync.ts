@@ -1,14 +1,20 @@
 import { put, get, list, del } from '@vercel/blob'
 
+
 function checkAuth(req: Request): boolean {
   const key = req.headers.get('x-api-key')
   const expected = process.env.SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
-  return key === expected
+  if (key !== expected) {
+    console.error('AUTH FAIL', { key: key?.slice(0, 10), expected: expected.slice(0, 10) })
+    return false
+  }
+  return true
 }
 
 function requireAuth(req: Request): Response | null {
   if (!checkAuth(req)) {
-    return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+    const expected = process.env.SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
+    return Response.json({ ok: false, error: 'Unauthorized', _debug: { expectedPrefix: expected.slice(0, 10), hasEnvVar: !!process.env.SYNC_API_KEY } }, { status: 401 })
   }
   return null
 }
