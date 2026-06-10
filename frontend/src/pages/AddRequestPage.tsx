@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { Building2, CheckCircle, Home, ImagePlus, MapPin, Send, Shield, FileText, Phone, X, Loader2, AlertCircle, Video } from 'lucide-react'
 import { Field } from '../components/ui'
 import { WelcomeSplash } from '../components/WelcomeSplash'
@@ -35,8 +35,48 @@ function mapsEmbedUrl(url: string): string | null {
   return null
 }
 
-function isValidGmapsUrl(url: string): boolean {
-  return /^https?:\/\/(?:www\.)?(?:maps\.)?(?:google\.[a-z.]+|goo\.gl)\/maps/i.test(url.trim()) || /^https?:\/\/maps\.app\.goo\.gl\//i.test(url.trim())
+function parseCoordsFromUrl(url: string): { lat: number; lng: number } | null {
+  try {
+    const u = new URL(url)
+    // /@lat,lng,z or /@lat,lng pattern (Google Maps)
+    const atMatch = u.pathname.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/)
+    if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]) }
+    // ?q=lat,lng or ?q=lat,lng&...
+    const q = u.searchParams.get('q')
+    if (q) {
+      const parts = q.split(',')
+      if (parts.length >= 2) {
+        const lat = parseFloat(parts[0])
+        const lng = parseFloat(parts[1])
+        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng }
+      }
+    }
+    // ?ll=lat,lng
+    const ll = u.searchParams.get('ll')
+    if (ll) {
+      const parts = ll.split(',')
+      if (parts.length >= 2) {
+        const lat = parseFloat(parts[0])
+        const lng = parseFloat(parts[1])
+        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng }
+      }
+    }
+  } catch { /* invalid URL — ignore */ }
+  return null
+}
+
+async function reverseGeocode(lat: number, lng: number): Promise<{ city: string; district: string }> {
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ar`, { headers: { 'User-Agent': 'almarqab/1.0' } })
+    if (res.ok) {
+      const data = await res.json()
+      const addr = data.address || {}
+      const city = (addr.city || addr.town || addr.county || addr.state_district || '').replace(/^مدينة\s*/i, '')
+      const district = addr.suburb || addr.neighbourhood || addr.village || addr.hamlet || addr.district || ''
+      return { city, district }
+    }
+  } catch { /* geocode failed — non-critical */ }
+  return { city: '', district: '' }
 }
 
 export function AddRequestPage() {
@@ -44,24 +84,31 @@ export function AddRequestPage() {
   const [f,setF]=useState(mt);const[e,setE]=useState<Record<string,string>>({});const[done,setDone]=useState(false);const[sub,setSub]=useState(false);const[splash,setSplash]=useState(true);const[subErr,setSubErr]=useState('')
   const [photos, setPhotos] = useState<string[]>([]); const [uploadingPhoto, setUploadingPhoto] = useState(false); const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({}); const [uploadErrors, setUploadErrors] = useState<string[]>([]); const [previewTypes, setPreviewTypes] = useState<Record<string, string>>({}); const fileInputRef = useRef<HTMLInputElement>(null)
   const [locating, setLocating] = useState(false); const [locError, setLocError] = useState('')
+  const geocodingRef = useRef(false)
+
+  const handleLocationChange = useCallback(async (url: string) => {
+    setF(prev => ({ ...prev, locationUrl: url }))
+    const coords = parseCoordsFromUrl(url)
+    if (coords && !geocodingRef.current) {
+      geocodingRef.current = true
+      const { city, district } = await reverseGeocode(coords.lat, coords.lng)
+      if (city || district) {
+        setF(prev => prev.locationUrl === url ? { ...prev, city: city || prev.city, district: district || prev.district } : prev)
+      }
+      geocodingRef.current = false
+    }
+  }, [])
+
   const detectLocation = () => {
     if (!navigator.geolocation) { setLocError('المتصفح لا يدعم تحديد الموقع'); return }
     setLocating(true); setLocError('')
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords
-        const url = `https://maps.google.com/maps?q=${latitude},${longitude}`
-        let city = ''; let district = ''
-        try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&accept-language=ar`, { headers: { 'User-Agent': 'almarqab/1.0' } })
-          if (res.ok) {
-            const data = await res.json()
-            const addr = data.address || {}
-            city = (addr.city || addr.town || addr.county || addr.state_district || '').replace(/^مدينة\s*/i, '')
-            district = addr.suburb || addr.neighbourhood || addr.village || addr.hamlet || addr.district || ''
-          }
-        } catch { /* reverse geocode failed — non-critical */ }
-        setF(prev => ({ ...prev, locationUrl: url, city: city || prev.city, district: district || prev.district }))
+        const url = `https://maps.google.com/?q=${latitude},${longitude}`
+        setF(prev => ({ ...prev, locationUrl: url }))
+        const { city, district } = await reverseGeocode(latitude, longitude)
+        setF(prev => prev.locationUrl === url ? { ...prev, city: city || prev.city, district: district || prev.district } : prev)
         setLocating(false)
       },
       (err) => {
@@ -73,14 +120,14 @@ export function AddRequestPage() {
         }
         setLocating(false)
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     )
   }
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm']; const MAX_SIZE = 15 * 1024 * 1024
   const [termsAccepted, setTermsAccepted] = useState(false)
   const embedUrl = f.locationUrl.trim() ? mapsEmbedUrl(f.locationUrl) : null
 
-  const v=()=>{const x:Record<string,string>={};const t=f.customType||f.type;if(!f.name.trim())x.name='مطلوب';if(!f.phone.trim())x.phone='مطلوب';else if(!/^05\d{8}$/.test(f.phone.replace(/\D/g,'')))x.phone='ادخل 10 أرقام يبدأ بـ 05';if(!f.city)x.city='مطلوب';if(!f.district.trim())x.district='مطلوب';if(!f.price.trim())x.price='مطلوب';else if(!/^\d+$/.test(f.price.trim()))x.price='أرقام فقط';if(!f.area.trim())x.area='مطلوب';else if(!/^\d+$/.test(f.area.trim()))x.area='أرقام فقط';if(!t)x.type='مطلوب';else{const fields=typeFieldsMap[t as PropertyType];if(!fields)return x;for(const fld of fields){if(fld==='orientation'&&!f.orientation)x.orientation='مطلوب';else if((fld==='rooms'||fld==='floor'||fld==='floors'||fld==='streetWidth')&&!f[fld].trim())x[fld]='مطلوب';else if(fld==='pool'&&!f.pool)x.pool='مطلوب';else if(fld==='finishing'&&!f.finishing)x.finishing='مطلوب';else if(fld==='parking'&&!f.parking)x.parking='مطلوب'}}if(f.locationUrl.trim()&&!isValidGmapsUrl(f.locationUrl))x.locationUrl='رابط خرائط غير صالح';if(uploadingPhoto)x.photos='انتظر حتى اكتمال رفع جميع الصور';else if(photos.length<2||photos.some(p=>p.startsWith('blob:')))x.photos='يرجى رفع صورتين على الأقل';if(!termsAccepted)x.terms='يجب الموافقة على الشروط';return x}
+  const v=()=>{const x:Record<string,string>={};const t=f.customType||f.type;if(!f.name.trim())x.name='مطلوب';if(!f.phone.trim())x.phone='مطلوب';else if(!/^05\d{8}$/.test(f.phone.replace(/\D/g,'')))x.phone='ادخل 10 أرقام يبدأ بـ 05';if(!f.city)x.city='مطلوب';if(!f.district.trim())x.district='مطلوب';if(!f.price.trim())x.price='مطلوب';else if(!/^\d+$/.test(f.price.trim()))x.price='أرقام فقط';if(!f.area.trim())x.area='مطلوب';else if(!/^\d+$/.test(f.area.trim()))x.area='أرقام فقط';if(!t)x.type='مطلوب';else{const fields=typeFieldsMap[t as PropertyType];if(!fields)return x;for(const fld of fields){if(fld==='orientation'&&!f.orientation)x.orientation='مطلوب';else if((fld==='rooms'||fld==='floor'||fld==='floors'||fld==='streetWidth')&&!f[fld].trim())x[fld]='مطلوب';else if(fld==='pool'&&!f.pool)x.pool='مطلوب';else if(fld==='finishing'&&!f.finishing)x.finishing='مطلوب';else if(fld==='parking'&&!f.parking)x.parking='مطلوب'}}if(uploadingPhoto)x.photos='انتظر حتى اكتمال رفع جميع الصور';else if(photos.length<2||photos.some(p=>p.startsWith('blob:')))x.photos='يرجى رفع صورتين على الأقل';if(!termsAccepted)x.terms='يجب الموافقة على الشروط';return x}
   const validateFile = (file: File): string | null => {
     if (!ALLOWED_TYPES.includes(file.type)) return 'نوع الملف غير مدعوم. الأنواع: JPG, PNG, WebP, GIF, MP4'
     if (file.size > MAX_SIZE) return 'الملف كبير جداً. الحد الأقصى 15 ميجابايت'
@@ -208,13 +255,13 @@ export function AddRequestPage() {
           <h2 className="text-lg font-bold mt-3" style={{color:'#2C2418'}}>معلومات العقار</h2>
           <Field label="رابط موقع العقار (خرائط Google)">
             <div className="flex gap-2 items-start">
-              <div className="flex-1"><input onChange={e=>setF({...f,locationUrl:e.target.value})} value={f.locationUrl} placeholder="https://maps.google.com/..." />{e.locationUrl&&<span className="text-sm text-red-500">{e.locationUrl}</span>}{locError&&<span className="text-sm text-red-500 block mt-1">{locError}</span>}</div>
+              <div className="flex-1"><input onChange={e=>handleLocationChange(e.target.value)} value={f.locationUrl} placeholder="https://maps.google.com/..." />{locError&&<span className="text-sm text-red-500 block mt-1">{locError}</span>}</div>
               <button type="button" onClick={detectLocation} disabled={locating} className="btn btn-outline btn-sm whitespace-nowrap mt-0" style={{padding:'8px 12px',minHeight:'42px'}}>{locating ? <><Loader2 size={14} className="animate-spin" />...</> : <><MapPin size={14} />تحديد موقعي</>}</button>
             </div>
           </Field>
           {embedUrl
             ? <div className="rounded-xl overflow-hidden border border-[#E0D0B8]"><iframe src={embedUrl} width="100%" height="250" style={{border:0}} allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade" title="خريطة الموقع" /></div>
-            : f.locationUrl.trim() && isValidGmapsUrl(f.locationUrl)
+            : f.locationUrl.trim()
               ? <a href={f.locationUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm" style={{color:'#3D6B4F',textDecoration:'underline'}}><MapPin size={14} />عرض الموقع على خرائط Google</a>
               : null}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
