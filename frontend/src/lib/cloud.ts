@@ -6,7 +6,7 @@ interface SyncPayload {
   version: number
 }
 
-const API_KEY = import.meta.env.VITE_SYNC_API_KEY || 'almrqab-sync-key-2026'
+const API_KEY = import.meta.env.VITE_SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
 const CONTENT_JSON = { 'Content-Type': 'application/json', 'x-api-key': API_KEY } as const
 
 export async function pullFromCloud(): Promise<SyncPayload | null> {

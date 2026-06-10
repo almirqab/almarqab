@@ -2,7 +2,7 @@ import { put, get, list, del } from '@vercel/blob'
 
 function checkAuth(req: Request): boolean {
   const key = req.headers.get('x-api-key')
-  const expected = process.env.SYNC_API_KEY || 'almrqab-sync-key-2026'
+  const expected = process.env.SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
   return key === expected
 }
 
