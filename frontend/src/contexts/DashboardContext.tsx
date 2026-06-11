@@ -67,14 +67,18 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
                 if (cloudData.settings) { await DB.saveSettings(cloudData.settings as OfficeSettings); setOfficeSettings(cloudData.settings as OfficeSettings) }
               }
             } else if (cloudData) {
-              // Merge cloud items into local: add cloud-only, keep local-only
+              // Merge cloud items into local: add cloud-only, keep local-only, dedup by content
+              const key = (item: any) => {
+                if (item.clientName || item.ownerName) return `${item.clientName||item.ownerName}|${item.propertyTitle||item.title}|${item.propertyPrice||item.price}`
+                if (item.name) return `client|${item.name}|${item.phone}`
+                return `${item.id}`
+              }
               const merge = async (cloud: unknown[] | undefined, local: any[], setter: (v: any) => void, add: (v: any) => Promise<void>) => {
                 const cloudItems = (cloud || []) as any[]
-                const localIds = new Set(local.map(x => x.id))
-                for (const item of cloudItems) { if (!localIds.has(item.id)) await add(item) }
-                const merged = [...local]
-                for (const item of cloudItems) { if (!localIds.has(item.id)) merged.push(item) }
-                if (merged.length !== local.length) setter(merged)
+                const localKeys = new Set(local.map(x => key(x)))
+                const deduped = [...local]
+                for (const item of cloudItems) { if (!localKeys.has(key(item))) { await add(item); deduped.push(item); localKeys.add(key(item)) } }
+                if (deduped.length !== local.length) setter(deduped)
               }
               const [cCur, pCur, rCur] = await Promise.all([DB.getAllClients(), DB.getAllProperties(), DB.getAllRequests()])
               await merge(cloudData.clients, cCur, setClients, DB.addClient)

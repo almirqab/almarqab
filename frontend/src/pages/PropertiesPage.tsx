@@ -60,7 +60,7 @@ export function PropertiesPage() {
 
   const stBadge = (s: PropertyStatus) => {
     const map: Record<PropertyStatus, {bg:string,color:string}> = { 'متاح':{bg:'rgba(61,107,79,.12)',color:'#3D6B4F'}, 'تم البيع':{bg:'rgba(179,58,58,.12)',color:'#B33A3A'}, 'تم التأجير':{bg:'rgba(179,58,58,.12)',color:'#B33A3A'}, 'ملغي':{bg:'rgba(90,78,60,.12)',color:'#5C4F3E'} }
-    const m = map[s]
+    const m = map[s] ?? {bg:'rgba(61,107,79,.12)',color:'#3D6B4F'}
     return <span className="badge" style={{background:m.bg,color:m.color}}>{s}</span>
   }
 
