@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     const ext = file.name.split('.').pop() || 'jpg'
     const name = `photos/${crypto.randomUUID()}.${ext}`
     const blob = await put(name, buffer, {
-      access: 'private',
+      access: 'public',
       addRandomSuffix: true,
       contentType: file.type,
     })
