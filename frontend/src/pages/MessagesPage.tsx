@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Building2, MapPin, Phone, Send } from 'lucide-react'
 import { Field, Toast } from '../components/ui'
 import { useDashboard } from '../contexts/useDashboard'
+import { toImageUrl } from '../lib/blob'
 
 function norm(p:string){const d=p.replace(/\D/g,'');if(d.startsWith('966'))return d;if(d.startsWith('05'))return `966${d.slice(1)}`;if(d.startsWith('5')&&d.length===9)return `966${d}`;return d}
 
@@ -17,7 +18,8 @@ export function MessagesPage() {
   const propDetails = (p: typeof avail[0]) => {
     const name=officeSettings.name||'المرقاب الذهبي'
     const ph=officeSettings.phone?`\n📞 ${officeSettings.phone}`:''
-    return `السلام عليكم ورحمة الله وبركاته\n\nيسرنا في ${name} أن نعرض عليكم العقار التالي:\n\n🏠 ${p.title}\n📍 ${p.district}، ${p.city}\n🏷️ النوع: ${p.type}\n💰 السعر: ${p.price}\n📐 المساحة: ${p.area}${p.rooms?`\n🛏️ عدد الغرف: ${p.rooms}`:''}${p.floor?`\n🏢 الدور: ${p.floor}`:''}${p.floors?`\n🏗️ عدد الأدوار: ${p.floors}`:''}${p.orientation?`\n🧭 الواجهة: ${p.orientation}`:''}${p.streetWidth?`\n🛣️ عرض الشارع: ${p.streetWidth} م`:''}${p.pool?`\n🏊 المسبح: ${p.pool}`:''}${p.finishing?`\n🔨 التشطيب: ${p.finishing}`:''}${p.parking?`\n🚗 مواقف: ${p.parking}`:''}${p.locationUrl?`\n🔗 رابط الموقع: ${p.locationUrl}`:''}${p.description?`\n\n${p.description}`:''}\n\nللتواصل والاستفسار:\n${name}${ph}`
+    const photoLink = (p.photos && p.photos.length > 0) ? `\n🖼️ رابط الصور: ${toImageUrl(p.photos[0])}\n` : ''
+    return `السلام عليكم ورحمة الله وبركاته\n\nيسرنا في ${name} أن نعرض عليكم العقار التالي:\n${photoLink}🏠 ${p.title}\n📍 ${p.district}، ${p.city}\n🏷️ النوع: ${p.type}\n💰 السعر: ${p.price}\n📐 المساحة: ${p.area}${p.rooms?`\n🛏️ عدد الغرف: ${p.rooms}`:''}${p.floor?`\n🏢 الدور: ${p.floor}`:''}${p.floors?`\n🏗️ عدد الأدوار: ${p.floors}`:''}${p.orientation?`\n🧭 الواجهة: ${p.orientation}`:''}${p.streetWidth?`\n🛣️ عرض الشارع: ${p.streetWidth} م`:''}${p.pool?`\n🏊 المسبح: ${p.pool}`:''}${p.finishing?`\n🔨 التشطيب: ${p.finishing}`:''}${p.parking?`\n🚗 مواقف: ${p.parking}`:''}${p.locationUrl?`\n🔗 رابط الموقع: ${p.locationUrl}`:''}${p.description?`\n\n${p.description}`:''}\n\nللتواصل والاستفسار:\n${name}${ph}`
   }
 
   const sendTo = () => {
