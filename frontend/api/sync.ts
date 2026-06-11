@@ -56,8 +56,10 @@ function submissionToRequestItem(sub: Record<string, unknown>) {
   const city = (sub.propertyCity as string) || ''
   const district = (sub.propertyDistrict as string) || ''
   const title = `${t} - ${city} ${district}`.trim()
+  const subId = (sub._submissionId as string) || ''
+  const stableId = Number(subId.replace(/\D/g, '').slice(0, 15)) || Date.now()
   return {
-    id: nextId(),
+    id: stableId,
     clientName: (sub.clientName as string) || (sub.name as string) || '',
     clientPhone: (sub.clientPhone as string) || (sub.phone as string) || '',
     clientType: (sub.clientType as string) || 'مالك',
@@ -84,19 +86,26 @@ function submissionToRequestItem(sub: Record<string, unknown>) {
   }
 }
 
-async function loadUnprocessedSubmissions(processed: Set<string>): Promise<unknown[]> {
+async function loadUnprocessedSubmissions(processed: Set<string>): Promise<{ loaded: unknown[]; newProcessed: string[] }> {
   try {
     const { blobs } = await list({ prefix: 'submissions/' })
+    const newProcessed: string[] = []
     const results = await Promise.all(blobs.map(async (info) => {
       const id = info.pathname.replace('submissions/', '').replace('.json', '')
       if (processed.has(id)) return null
-      const res = await fetch(info.url)
-      if (!res.ok) return null
-      const sub = await res.json()
+      const result = await get(info.pathname, { access: 'private' })
+      if (!result || result.statusCode !== 200) return null
+      const reader = result.stream.getReader()
+      const decoder = new TextDecoder()
+      let text = ''
+      while (true) { const { done, value } = await reader.read(); if (done) break; text += decoder.decode(value, { stream: true }) }
+      text += decoder.decode()
+      const sub = JSON.parse(text)
+      newProcessed.push(id)
       return submissionToRequestItem(sub)
     }))
-    return results.filter(Boolean) as unknown[]
-  } catch { return [] }
+    return { loaded: results.filter(Boolean) as unknown[], newProcessed }
+  } catch { return { loaded: [], newProcessed: [] } }
 }
 
 async function cleanupProcessedSubmissions(processed: Set<string>): Promise<void> {
@@ -105,7 +114,7 @@ async function cleanupProcessedSubmissions(processed: Set<string>): Promise<void
     for (const info of blobs) {
       const id = info.pathname.replace('submissions/', '').replace('.json', '')
       if (processed.has(id)) {
-        try { await del(info.url) } catch {}
+        try { await del(info.pathname) } catch {}
       }
     }
   } catch {}
@@ -117,12 +126,17 @@ export async function GET(req: Request) {
   try {
     const data = await readBlob()
     const processed = new Set<string>(data?._processedSubmissions || [])
-    const submissions = await loadUnprocessedSubmissions(processed)
+    const { loaded, newProcessed } = await loadUnprocessedSubmissions(processed)
+    for (const id of newProcessed) processed.add(id)
+    if (newProcessed.length > 0) {
+      const updated = { ...data, _processedSubmissions: [...processed] }
+      await put(BLOB_PATH, JSON.stringify(updated), { access: 'private', addRandomSuffix: false, allowOverwrite: true })
+    }
     const merged = {
       ...data,
       clients: data?.clients ?? [],
       properties: data?.properties ?? [],
-      requests: [...(data?.requests || []), ...submissions],
+      requests: [...(data?.requests || []), ...loaded],
       settings: data?.settings ?? {},
     }
     return Response.json({ ok: true, data: merged }, { headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate' } })
