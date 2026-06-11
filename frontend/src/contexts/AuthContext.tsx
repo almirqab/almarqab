@@ -24,7 +24,12 @@ const DEFAULT_PASSWORD_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a
 function loadCredentials(): { username: string; passwordHash: string } {
   try {
     const stored = localStorage.getItem('dashboard_credentials')
-    if (stored) { const p = JSON.parse(stored); if (p.username && (p.passwordHash || p.password)) return { username: p.username, passwordHash: p.passwordHash || p.password } }
+    if (stored) {
+      const p = JSON.parse(stored)
+      if (p.username && p.passwordHash) return { username: p.username, passwordHash: p.passwordHash }
+      // legacy: old format stored plaintext password; migrate in login()
+      if (p.username && p.password) return { username: p.username, passwordHash: p.password }
+    }
   } catch { void 0 }
   return { username: DEFAULT_USERNAME, passwordHash: DEFAULT_PASSWORD_HASH }
 }
@@ -76,6 +81,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (username === creds.username) {
           const inputHash = await sha256(password)
           if (inputHash === creds.passwordHash) {
+            setIsAuthenticated(true)
+            saveSession()
+            return true
+          }
+          // legacy: stored value is plaintext password (old format)
+          if (password === creds.passwordHash) {
+            const hash = await sha256(password)
+            localStorage.setItem('dashboard_credentials', JSON.stringify({ username: creds.username, passwordHash: hash }))
+            setCredentials({ username: creds.username, passwordHash: hash })
             setIsAuthenticated(true)
             saveSession()
             return true
