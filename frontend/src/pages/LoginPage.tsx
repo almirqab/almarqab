@@ -10,11 +10,12 @@ export function LoginPage() {
   const [u, setU] = useState(''); const [p, setP] = useState(''); const [e, setE] = useState('')
   const [splash, setSplash] = useState(false)
 
-  const h = (e2: React.FormEvent) => {
+  const h = async (e2: React.FormEvent) => {
     e2.preventDefault()
     if (!u.trim() || !p.trim()) { setE('يرجى إدخال اسم المستخدم وكلمة المرور'); return }
     setE('')
-    if (login(u.trim(), p.trim())) setSplash(true)
+    const ok = await login(u.trim(), p.trim())
+    if (ok) setSplash(true)
     else setE('اسم المستخدم أو كلمة المرور غير صحيحة')
   }
 

@@ -8,9 +8,9 @@ export interface Credentials {
 export interface AuthContextValue {
   isAuthenticated: boolean
   credentials: Credentials
-  login: (username: string, password: string) => boolean
+  login: (username: string, password: string) => Promise<boolean>
   logout: () => void
-  updateCredentials: (creds: Credentials) => void
+  updateCredentials: (creds: Credentials) => Promise<void>
 }
 
 export const AuthContext = createContext<AuthContextValue | undefined>(undefined)

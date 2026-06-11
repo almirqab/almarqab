@@ -5,15 +5,19 @@ function isValidGmapsUrl(url: unknown): boolean {
   return /^https?:\/\/(?:www\.)?(?:maps\.)?google\.[a-z.]+\/maps\/?/.test(url.trim())
 }
 
-function checkAuth(req: Request): boolean {
-  const key = req.headers.get('x-api-key')
-  const expected = process.env.SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
-  return key === expected
+function isSameOrigin(req: Request): boolean {
+  const origin = req.headers.get('origin')
+  const referer = req.headers.get('referer')
+  const host = req.headers.get('host') || ''
+  if (!origin && !referer) return false
+  if (origin && !origin.includes(host)) return false
+  if (referer && !referer.includes(host)) return false
+  return true
 }
 
 export async function POST(req: Request) {
-  if (!checkAuth(req)) {
-    return Response.json({ ok: false, error: 'Unauthorized' }, { status: 401 })
+  if (!isSameOrigin(req)) {
+    return Response.json({ ok: false, error: 'Forbidden' }, { status: 403 })
   }
   try {
     const data = await req.json()

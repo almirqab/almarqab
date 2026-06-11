@@ -87,13 +87,11 @@ export function PropertiesPage() {
     setPreviewTypes(prev => ({ ...prev, [preview]: file.type }))
 
     try {
-      const key = import.meta.env.VITE_SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
       const formData = new FormData()
       formData.append('file', file)
 
       const xhr = new XMLHttpRequest()
       xhr.open('POST', '/api/upload')
-      xhr.setRequestHeader('x-api-key', key)
 
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {

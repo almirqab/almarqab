@@ -9,6 +9,14 @@ interface PublicProperty {
 const cities = ['الرياض','جدة','مكة','المدينة','الدمام','الخبر','الطائف','تبوك','أبها','بريدة','حائل','نجران','جازان','الأحساء','الخرج','القطيف','الظهران','ينبع','الجبيل','حفر الباطن']
 const types = ['شقة','فيلا','أرض','عمارة','مكتب','مستودع']
 
+function parseCoordsFromUrl(value: string): { lat: number; lng: number } | null {
+  try {
+    const match = value.match(/@?(-?\d+\.\d+),(-?\d+\.\d+)/) || value.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/)
+    if (match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) }
+  } catch { /* ignore */ }
+  return null
+}
+
 export function PublicPropertiesPage() {
   const [properties, setProperties] = useState<PublicProperty[]>([])
   const [loading, setLoading] = useState(true)
@@ -110,7 +118,7 @@ export function PublicPropertiesPage() {
         <div className="grid grid-cols-2 gap-3 bg-[#F5F0E8] rounded-xl p-4 text-sm mb-4">
           {[['النوع', sel.type], ['المدينة', sel.city], ['الحي', sel.district], ['السعر', sel.price], ['المساحة', sel.area+' م²'], ['الغرف', sel.rooms||'-']].map(([l,v]) => v ? <div key={l as string}><span style={{ color:'#7A6B55' }}>{l}: </span>{v}</div> : null)}
           {sel.locationUrl && <div className="col-span-2"><span style={{ color:'#7A6B55' }}>الموقع: </span><a href={sel.locationUrl} target="_blank" rel="noreferrer" style={{ color:'#C5A059', textDecoration:'underline', fontSize:'0.85rem' }}>عرض على خرائط Google</a></div>}
-          {(sel.locationUrl && /^https?:\/\/(?:www\.)?(?:maps\.)?(?:google\.[a-z.]+|goo\.gl)\/maps/i.test(sel.locationUrl)) && <div className="col-span-2 rounded-xl overflow-hidden border border-[#E0D0B8]"><iframe src={`https://maps.google.com/maps?q=${encodeURIComponent(sel.locationUrl)}&output=embed&hl=ar`} width="100%" height="200" style={{border:0}} allowFullScreen loading="lazy" title="خريطة الموقع" /></div>}
+          {(() => { const coords = parseCoordsFromUrl(sel.locationUrl || ''); return coords ? <div className="col-span-2 rounded-xl overflow-hidden border border-[#E0D0B8]"><iframe src={`https://maps.google.com/maps?q=${coords.lat},${coords.lng}&output=embed&hl=ar`} width="100%" height="200" style={{border:0}} allowFullScreen loading="lazy" title="خريطة الموقع" /></div> : null })()}
         </div>
         {sel.description && <p className="text-sm mb-4" style={{ color:'#5C4F3E' }}>{sel.description}</p>}
         {sel.photos && sel.photos.length > 0 && <div className="flex flex-wrap gap-2 mb-4">

@@ -5,7 +5,7 @@ import { useDashboard } from '../contexts/useDashboard'
 import { useAuth } from '../contexts/useAuth'
 
 const checkCloud = async () => {
-  try { const key = import.meta.env.VITE_SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'; const r = await fetch(`/api/sync?_=${Date.now()}`, { headers: { 'x-api-key': key }, cache: 'no-store' }); if (!r.ok) return null; const d = await r.json(); return d.data ? { ok: true, version: d.data.version, clients: d.data.clients?.length ?? 0, properties: d.data.properties?.length ?? 0, requests: d.data.requests?.length ?? 0 } : { ok: true, version: 0, clients: 0, properties: 0, requests: 0 } } catch { return null }
+  try { const key = import.meta.env.VITE_SYNC_API_KEY || ''; const r = await fetch(`/api/sync?_=${Date.now()}`, { headers: { 'x-api-key': key }, cache: 'no-store' }); if (!r.ok) return null; const d = await r.json(); return d.data ? { ok: true, version: d.data.version, clients: d.data.clients?.length ?? 0, properties: d.data.properties?.length ?? 0, requests: d.data.requests?.length ?? 0 } : { ok: true, version: 0, clients: 0, properties: 0, requests: 0 } } catch { return null }
 }
 
 export function SettingsPage() {
@@ -40,23 +40,28 @@ export function SettingsPage() {
     lds('settings')(false)
   }
 
-  const currentPw = () => { try { const r = localStorage.getItem('dashboard_credentials'); if (r) { const p = JSON.parse(r); if (p.password) return p.password } } catch { void 0 } return 'admin' }
-  const currentUser = () => { try { const r = localStorage.getItem('dashboard_credentials'); if (r) { const p = JSON.parse(r); if (p.username) return p.username } } catch { void 0 } return 'admin' }
+  const getStoredCreds = () => { try { const r = localStorage.getItem('dashboard_credentials'); if (r) return JSON.parse(r) } catch { void 0 } return null }
+  const currentUser = () => { const c = getStoredCreds(); return c?.username || 'admin' }
   const saveUsername = async () => {
     if (ld('user')) return; lds('user')(true)
     if (!newUsername.trim()) { setTo('أدخل اسم مستخدم'); setSt(true); lds('user')(false); return }
-    updateCredentials({ username: newUsername.trim(), password: currentPw() })
+    const existing = getStoredCreds() || { passwordHash: '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918' }
+    localStorage.setItem('dashboard_credentials', JSON.stringify({ username: newUsername.trim(), passwordHash: existing.passwordHash || existing.password }))
+    window.dispatchEvent(new Event('creds-changed'))
     setNewUsername('')
     await syncToCloud()
     setTo('تم حفظ اسم المستخدم'); setSt(true)
     lds('user')(false)
   }
+  const hashPw = async (pw: string) => { const e = new TextEncoder(); const d = e.encode(pw); const h = await crypto.subtle.digest('SHA-256', d); return Array.from(new Uint8Array(h)).map(b => b.toString(16).padStart(2, '0')).join('') }
   const changePw = async () => {
     if (ld('pw')) return; lds('pw')(true)
-    if (pw.old !== currentPw()) { setTo('كلمة المرور الحالية غير صحيحة'); setSt(true); lds('pw')(false); return }
+    const storedHash = getStoredCreds()?.passwordHash || getStoredCreds()?.password || '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918'
+    const oldHash = await hashPw(pw.old)
+    if (oldHash !== storedHash) { setTo('كلمة المرور الحالية غير صحيحة'); setSt(true); lds('pw')(false); return }
     if (pw.new1 !== pw.new2) { setTo('كلمة المرور غير متطابقة'); setSt(true); lds('pw')(false); return }
     if (pw.new1.length < 4) { setTo('قصيرة جداً'); setSt(true); lds('pw')(false); return }
-    updateCredentials({ username: currentUser(), password: pw.new1 })
+    await updateCredentials({ username: currentUser(), password: pw.new1 })
     setPw({old:'',new1:'',new2:''})
     await syncToCloud()
     setTo('تم تغيير كلمة المرور'); setSt(true)

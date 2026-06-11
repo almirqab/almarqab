@@ -3,7 +3,11 @@ import { put, get, list, del } from '@vercel/blob'
 
 function checkAuth(req: Request): boolean {
   const key = req.headers.get('x-api-key')
-  const expected = process.env.SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
+  const expected = process.env.SYNC_API_KEY
+  if (!expected) {
+    console.error('SYNC_API_KEY not configured in environment')
+    return false
+  }
   if (key !== expected) {
     console.error('AUTH FAIL', { key: key?.slice(0, 10), expected: expected.slice(0, 10) })
     return false
@@ -13,8 +17,8 @@ function checkAuth(req: Request): boolean {
 
 function requireAuth(req: Request): Response | null {
   if (!checkAuth(req)) {
-    const expected = process.env.SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
-    return Response.json({ ok: false, error: 'Unauthorized', _debug: { expectedPrefix: expected.slice(0, 10), hasEnvVar: !!process.env.SYNC_API_KEY } }, { status: 401 })
+    const expected = process.env.SYNC_API_KEY
+    return Response.json({ ok: false, error: 'Unauthorized', _debug: { hasEnvVar: !!expected } }, { status: 401 })
   }
   return null
 }

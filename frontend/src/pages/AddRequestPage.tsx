@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useMemo } from 'react'
 import { Building2, CheckCircle, Home, ImagePlus, MapPin, Send, Shield, FileText, Phone, X, Loader2, AlertCircle, Video } from 'lucide-react'
 import { Field } from '../components/ui'
 import { WelcomeSplash } from '../components/WelcomeSplash'
@@ -26,57 +26,25 @@ const typeFields = (type: string, ff: typeof mt, setFf: (v: typeof mt) => void, 
   })}</div>
 }
 
-function mapsEmbedUrl(url: string): string | null {
-  if (!url) return null
-  const trimmed = url.trim()
-  if (/^https?:\/\/(?:www\.)?(?:maps\.)?(?:google\.[a-z.]+|goo\.gl)\/maps/i.test(trimmed) || /^https?:\/\/maps\.app\.goo\.gl\//i.test(trimmed)) {
-    return `https://maps.google.com/maps?q=${encodeURIComponent(trimmed)}&output=embed&hl=ar`
-  }
+function parseCoordsFromUrl(value: string): { lat: number; lng: number } | null {
+  try {
+    const match = value.match(/@?(-?\d+\.\d+),(-?\d+\.\d+)/) || value.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/)
+    if (match) return { lat: parseFloat(match[1]), lng: parseFloat(match[2]) }
+  } catch { /* ignore */ }
   return null
 }
 
-function parseCoordsFromUrl(url: string): { lat: number; lng: number } | null {
-  try {
-    const u = new URL(url)
-    // /@lat,lng,z or /@lat,lng pattern (Google Maps)
-    const atMatch = u.pathname.match(/@(-?\d+\.?\d*),(-?\d+\.?\d*)/)
-    if (atMatch) return { lat: parseFloat(atMatch[1]), lng: parseFloat(atMatch[2]) }
-    // ?q=lat,lng or ?q=lat,lng&...
-    const q = u.searchParams.get('q')
-    if (q) {
-      const parts = q.split(',')
-      if (parts.length >= 2) {
-        const lat = parseFloat(parts[0])
-        const lng = parseFloat(parts[1])
-        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng }
-      }
-    }
-    // ?ll=lat,lng
-    const ll = u.searchParams.get('ll')
-    if (ll) {
-      const parts = ll.split(',')
-      if (parts.length >= 2) {
-        const lat = parseFloat(parts[0])
-        const lng = parseFloat(parts[1])
-        if (!isNaN(lat) && !isNaN(lng)) return { lat, lng }
-      }
-    }
-  } catch { /* invalid URL — ignore */ }
-  return null
+function isGoogleMapsUrl(value: string): boolean {
+  return /^https?:\/\/(?:www\.)?(?:maps\.)?(?:google\.[a-z.]+|goo\.gl)/i.test(value)
 }
 
 async function reverseGeocode(lat: number, lng: number): Promise<{ city: string; district: string }> {
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=ar`, { headers: { 'User-Agent': 'almarqab/1.0' } })
-    if (res.ok) {
-      const data = await res.json()
-      const addr = data.address || {}
-      const city = (addr.city || addr.town || addr.county || addr.state_district || '').replace(/^مدينة\s*/i, '')
-      const district = addr.suburb || addr.neighbourhood || addr.village || addr.hamlet || addr.district || ''
-      return { city, district }
-    }
-  } catch { /* geocode failed — non-critical */ }
-  return { city: '', district: '' }
+    const res = await fetch(`/api/geocode?lat=${lat}&lng=${lng}`)
+    if (!res.ok) return { city: '', district: '' }
+    const data = await res.json()
+    return { city: data.city || '', district: data.district || '' }
+  } catch { return { city: '', district: '' } }
 }
 
 export function AddRequestPage() {
@@ -86,18 +54,35 @@ export function AddRequestPage() {
   const [locating, setLocating] = useState(false); const [locError, setLocError] = useState('')
   const geocodingRef = useRef(false)
 
-  const handleLocationChange = useCallback(async (url: string) => {
-    setF(prev => ({ ...prev, locationUrl: url }))
-    const coords = parseCoordsFromUrl(url)
-    if (coords && !geocodingRef.current) {
-      geocodingRef.current = true
-      const { city, district } = await reverseGeocode(coords.lat, coords.lng)
+  const locationCoords = useMemo(() => f.locationUrl ? parseCoordsFromUrl(f.locationUrl) : null, [f.locationUrl])
+  const embedUrl = locationCoords
+    ? `https://maps.google.com/maps?q=${locationCoords.lat},${locationCoords.lng}&output=embed&hl=ar`
+    : null
+
+  const autoFillFromCoords = async (lat: number, lng: number, sourceUrl: string) => {
+    if (geocodingRef.current) return
+    geocodingRef.current = true
+    try {
+      const { city, district } = await reverseGeocode(lat, lng)
       if (city || district) {
-        setF(prev => prev.locationUrl === url ? { ...prev, city: city || prev.city, district: district || prev.district } : prev)
+        setF(prev => prev.locationUrl === sourceUrl
+          ? { ...prev, city: city || prev.city, district: district || prev.district }
+          : prev)
       }
-      geocodingRef.current = false
-    }
-  }, [])
+    } catch { /* silent fallback */ }
+    geocodingRef.current = false
+  }
+
+  const handleLocationChange = (rawUrl: string) => {
+    setF(prev => ({ ...prev, locationUrl: rawUrl }))
+    try {
+      const match = rawUrl.match(/@?(-?\d+\.\d+),(-?\d+\.\d+)/) || rawUrl.match(/q=(-?\d+\.\d+),(-?\d+\.\d+)/)
+      if (match) {
+        const lat = parseFloat(match[1]), lng = parseFloat(match[2])
+        autoFillFromCoords(lat, lng, rawUrl)
+      }
+    } catch { /* silent — keep link as-is, city/district remain editable */ }
+  }
 
   const detectLocation = () => {
     if (!navigator.geolocation) { setLocError('المتصفح لا يدعم تحديد الموقع'); return }
@@ -105,10 +90,9 @@ export function AddRequestPage() {
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords
-        const url = `https://maps.google.com/?q=${latitude},${longitude}`
+        const url = `https://www.google.com/maps?q=${latitude},${longitude}`
         setF(prev => ({ ...prev, locationUrl: url }))
-        const { city, district } = await reverseGeocode(latitude, longitude)
-        setF(prev => prev.locationUrl === url ? { ...prev, city: city || prev.city, district: district || prev.district } : prev)
+        await autoFillFromCoords(latitude, longitude, url)
         setLocating(false)
       },
       (err) => {
@@ -125,9 +109,9 @@ export function AddRequestPage() {
   }
   const ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm']; const MAX_SIZE = 15 * 1024 * 1024
   const [termsAccepted, setTermsAccepted] = useState(false)
-  const embedUrl = f.locationUrl.trim() ? mapsEmbedUrl(f.locationUrl) : null
 
-  const v=()=>{const x:Record<string,string>={};const t=f.customType||f.type;if(!f.name.trim())x.name='مطلوب';if(!f.phone.trim())x.phone='مطلوب';else if(!/^05\d{8}$/.test(f.phone.replace(/\D/g,'')))x.phone='ادخل 10 أرقام يبدأ بـ 05';if(!f.city)x.city='مطلوب';if(!f.district.trim())x.district='مطلوب';if(!f.price.trim())x.price='مطلوب';else if(!/^\d+$/.test(f.price.trim()))x.price='أرقام فقط';if(!f.area.trim())x.area='مطلوب';else if(!/^\d+$/.test(f.area.trim()))x.area='أرقام فقط';if(!t)x.type='مطلوب';else{const fields=typeFieldsMap[t as PropertyType];if(!fields)return x;for(const fld of fields){if(fld==='orientation'&&!f.orientation)x.orientation='مطلوب';else if((fld==='rooms'||fld==='floor'||fld==='floors'||fld==='streetWidth')&&!f[fld].trim())x[fld]='مطلوب';else if(fld==='pool'&&!f.pool)x.pool='مطلوب';else if(fld==='finishing'&&!f.finishing)x.finishing='مطلوب';else if(fld==='parking'&&!f.parking)x.parking='مطلوب'}}if(uploadingPhoto)x.photos='انتظر حتى اكتمال رفع جميع الصور';else if(photos.length<2||photos.some(p=>p.startsWith('blob:')))x.photos='يرجى رفع صورتين على الأقل';if(!termsAccepted)x.terms='يجب الموافقة على الشروط';return x}
+  const v=()=>{const x:Record<string,string>={};const t=f.customType||f.type;if(!f.name.trim())x.name='مطلوب';if(!f.phone.trim())x.phone='مطلوب';else{const d=f.phone.replace(/\D/g,'');if(!/^(05\d{8}|5\d{8}|9665\d{8})$/.test(d))x.phone='رقم جوال سعودي صحيح: 05XXXXXXXX'};if(!f.city)x.city='مطلوب';if(!f.district.trim())x.district='مطلوب';if(!f.price.trim())x.price='مطلوب';else if(!/^\d+$/.test(f.price.trim()))x.price='أرقام فقط';if(!f.area.trim())x.area='مطلوب';else if(!/^\d+$/.test(f.area.trim()))x.area='أرقام فقط';if(!t)x.type='مطلوب';else{const fields=typeFieldsMap[t as PropertyType];if(!fields)return x;for(const fld of fields){if(fld==='orientation'&&!f.orientation)x.orientation='مطلوب';else if((fld==='rooms'||fld==='floor'||fld==='floors'||fld==='streetWidth')&&!f[fld].trim())x[fld]='مطلوب';else if(fld==='pool'&&!f.pool)x.pool='مطلوب';else if(fld==='finishing'&&!f.finishing)x.finishing='مطلوب';else if(fld==='parking'&&!f.parking)x.parking='مطلوب'}}if(uploadingPhoto)x.photos='انتظر حتى اكتمال رفع جميع الصور';else if(photos.length<2||photos.some(p=>p.startsWith('blob:')))x.photos='يرجى رفع صورتين على الأقل';if(!termsAccepted)x.terms='يجب الموافقة على الشروط';return x}
+
   const validateFile = (file: File): string | null => {
     if (!ALLOWED_TYPES.includes(file.type)) return 'نوع الملف غير مدعوم. الأنواع: JPG, PNG, WebP, GIF, MP4'
     if (file.size > MAX_SIZE) return 'الملف كبير جداً. الحد الأقصى 15 ميجابايت'
@@ -137,31 +121,20 @@ export function AddRequestPage() {
   const uploadPhoto = async (file: File) => {
     const err = validateFile(file)
     if (err) { setUploadErrors(prev => [...prev, err]); return }
-
-    const id = crypto.randomUUID()
     setUploadingPhoto(true)
-    setUploadProgress(prev => ({ ...prev, [id]: 0 }))
     setUploadErrors(prev => prev.filter(e => e !== err))
-
     const preview = URL.createObjectURL(file)
     setPhotos(prev => [...prev, preview])
     setPreviewTypes(prev => ({ ...prev, [preview]: file.type }))
-
+    setUploadProgress(prev => ({ ...prev, [preview]: 0 }))
     try {
       const formData = new FormData()
       formData.append('file', file)
-      const key = import.meta.env.VITE_SYNC_API_KEY || 'c4K8aBJHfnsCR7DxziLqt6rI2ZXEbPuhyFgwdASO'
-
       const xhr = new XMLHttpRequest()
       xhr.open('POST', '/api/upload')
-      xhr.setRequestHeader('x-api-key', key)
-
       xhr.upload.onprogress = (e) => {
-        if (e.lengthComputable) {
-          setUploadProgress(prev => ({ ...prev, [id]: Math.round((e.loaded / e.total) * 100) }))
-        }
+        if (e.lengthComputable) setUploadProgress(prev => ({ ...prev, [preview]: Math.round((e.loaded / e.total) * 100) }))
       }
-
       const result = await new Promise<{ url: string }>((resolve, reject) => {
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
@@ -174,17 +147,17 @@ export function AddRequestPage() {
         xhr.onabort = () => reject(new Error('تم إلغاء الرفع'))
         xhr.send(formData)
       })
-
       setPhotos(prev => prev.map(p => p === preview ? result.url : p))
       URL.revokeObjectURL(preview)
       setPreviewTypes(prev => { const n = { ...prev }; delete n[preview]; return n })
+      setUploadProgress(prev => { const n = { ...prev }; delete n[preview]; return n })
     } catch (e) {
       setPhotos(prev => prev.filter(p => p !== preview))
       URL.revokeObjectURL(preview)
       setPreviewTypes(prev => { const n = { ...prev }; delete n[preview]; return n })
+      setUploadProgress(prev => { const n = { ...prev }; delete n[preview]; return n })
       setUploadErrors(prev => [...prev, e instanceof Error ? e.message : 'فشل رفع الملف'])
     }
-    setUploadProgress(prev => { const n = { ...prev }; delete n[id]; return n })
     setUploadingPhoto(false)
   }
 
@@ -195,6 +168,7 @@ export function AddRequestPage() {
       return prev.filter((_, i) => i !== idx)
     })
   }
+
   const isVideo = (url: string) => /\.(mp4|webm)$/i.test(url) || previewTypes[url]?.startsWith('video/') || false
 
   const h=async(e2:React.FormEvent)=>{e2.preventDefault();const x=v();setE(x);if(Object.keys(x).length>0)return;setSub(true);setSubErr('');const t=f.customType||f.type;const title=`${t||''} - ${f.city||''} ${f.district||''}`.trim();try{await submitRequest({clientName:f.name.trim(),clientPhone:f.phone.trim(),clientType:'مالك',type:'إضافة عقار',propertyTitle:title,propertyCity:f.city,propertyDistrict:f.district.trim(),propertyPrice:f.price.trim(),propertyType:t,propertyArea:f.area.trim(),propertyRooms:f.rooms.trim(),propertyLocationUrl:f.locationUrl.trim()||undefined,propertyOrientation:f.orientation||undefined,propertyStreetWidth:f.streetWidth||undefined,propertyFloor:f.floor||undefined,propertyFloors:f.floors||undefined,propertyPool:f.pool||undefined,propertyFinishing:f.finishing||undefined,propertyParking:f.parking||undefined,propertyDescription:f.description.trim(),propertyPhotos:photos});setF(mt);setPhotos([]);setPreviewTypes({});setTermsAccepted(false);setDone(true)}catch{setSubErr('فشل الإرسال، تأكد من اتصالك وحاول مرة أخرى')}setSub(false)}
@@ -224,7 +198,6 @@ export function AddRequestPage() {
     </div>
 
     <div className="max-w-3xl mx-auto -mt-8 pb-16 px-4 w-full">
-      {/* Trust & Reliability Box */}
       {(officeSettings.falLicense || officeSettings.crNumber || officeSettings.whatsapp || officeSettings.address) && (
         <div className="glass p-5 mb-6 border border-[#C5A059]/30" style={{background:'rgba(255,255,255,.92)'}}>
           <div className="flex items-center gap-2 mb-3">
@@ -255,13 +228,13 @@ export function AddRequestPage() {
           <h2 className="text-lg font-bold mt-3" style={{color:'#2C2418'}}>معلومات العقار</h2>
           <Field label="رابط موقع العقار (خرائط Google)">
             <div className="flex gap-2 items-start">
-              <div className="flex-1"><input onChange={e=>handleLocationChange(e.target.value)} value={f.locationUrl} placeholder="https://maps.google.com/..." />{locError&&<span className="text-sm text-red-500 block mt-1">{locError}</span>}</div>
+              <div className="flex-1"><input onChange={e=>handleLocationChange(e.target.value)} value={f.locationUrl} placeholder="https://www.google.com/maps/..." />{locError&&<span className="text-sm text-red-500 block mt-1">{locError}</span>}</div>
               <button type="button" onClick={detectLocation} disabled={locating} className="btn btn-outline btn-sm whitespace-nowrap mt-0" style={{padding:'8px 12px',minHeight:'42px'}}>{locating ? <><Loader2 size={14} className="animate-spin" />...</> : <><MapPin size={14} />تحديد موقعي</>}</button>
             </div>
           </Field>
           {embedUrl
-            ? <div className="rounded-xl overflow-hidden border border-[#E0D0B8]"><iframe src={embedUrl} width="100%" height="250" style={{border:0}} allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade" title="خريطة الموقع" /></div>
-            : f.locationUrl.trim()
+            ? <iframe key={embedUrl} src={embedUrl} width="100%" height="250" className="rounded-xl border border-[#E0D0B8]" style={{border:0}} allowFullScreen loading="lazy" referrerPolicy="no-referrer-when-downgrade" title="خريطة الموقع" />
+            : f.locationUrl.trim() && isGoogleMapsUrl(f.locationUrl)
               ? <a href={f.locationUrl} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-sm" style={{color:'#3D6B4F',textDecoration:'underline'}}><MapPin size={14} />عرض الموقع على خرائط Google</a>
               : null}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -280,7 +253,7 @@ export function AddRequestPage() {
           <p className="text-xs" style={{color:'#7A6B55'}}>يرجى رفع صورتين على الأقل. يدعم JPG, PNG, WebP, GIF, MP4 (حد أقصى 15 MB)</p>
           <div className="flex flex-wrap gap-3">
             {photos.map((url, idx) => {
-              const progress = Object.values(uploadProgress).find(p => p > 0 && p < 100)
+              const progress = uploadProgress[url]
               const isPending = url.startsWith('blob:')
               const displayUrl = toImageUrl(url)
               return (
@@ -324,7 +297,6 @@ export function AddRequestPage() {
 
           {subErr&&<p className="text-red-500 text-sm text-center">{subErr}</p>}
 
-          {/* Footer info in form area */}
           <div className="mt-6 pt-4 border-t border-[#E0D0B8]">
             <div className="flex flex-wrap items-center justify-center gap-4 text-xs" style={{color:'#7A6B55'}}>
               {officeSettings.falLicense && <span>📜 ترخيص هيئة العقار: {officeSettings.falLicense}</span>}

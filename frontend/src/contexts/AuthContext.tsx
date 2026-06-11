@@ -3,19 +3,30 @@ import type { ReactNode } from 'react'
 import { AuthContext } from './auth-context'
 import type { AuthContextValue } from './auth-context'
 
-const SESSION_DURATION = 12 * 60 * 60 * 1000 // 12 hours
+const SESSION_DURATION = 12 * 60 * 60 * 1000
 
 interface SessionData {
   authenticated: boolean
   expiresAt: number
 }
 
-function loadCredentials(): { username: string; password: string } {
+async function sha256(text: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(text)
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
+const DEFAULT_USERNAME = 'admin'
+const DEFAULT_PASSWORD_HASH = '8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918' // SHA-256 of 'admin'
+
+function loadCredentials(): { username: string; passwordHash: string } {
   try {
     const stored = localStorage.getItem('dashboard_credentials')
-    if (stored) { const p = JSON.parse(stored); if (p.username && p.password) return p }
+    if (stored) { const p = JSON.parse(stored); if (p.username && (p.passwordHash || p.password)) return { username: p.username, passwordHash: p.passwordHash || p.password } }
   } catch { void 0 }
-  return { username: 'admin', password: 'admin' }
+  return { username: DEFAULT_USERNAME, passwordHash: DEFAULT_PASSWORD_HASH }
 }
 
 function loadSession(): SessionData {
@@ -49,7 +60,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const f = () => { setIsAuthenticated(false); clearSession() }
     window.addEventListener('creds-changed', h)
     window.addEventListener('force-logout', f)
-    // Check session expiry every minute
     const id = setInterval(() => {
       const s = loadSession()
       if (!s.authenticated) { setIsAuthenticated(false); clearSession() }
@@ -60,13 +70,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthContextValue>(
     () => ({
       isAuthenticated,
-      credentials,
-      login: (username: string, password: string) => {
+      credentials: { username: credentials.username, password: credentials.passwordHash },
+      login: async (username: string, password: string) => {
         const creds = loadCredentials()
-        if (username === creds.username && password === creds.password) {
-          setIsAuthenticated(true)
-          saveSession()
-          return true
+        if (username === creds.username) {
+          const inputHash = await sha256(password)
+          if (inputHash === creds.passwordHash) {
+            setIsAuthenticated(true)
+            saveSession()
+            return true
+          }
         }
         return false
       },
@@ -74,9 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsAuthenticated(false)
         clearSession()
       },
-      updateCredentials: (creds) => {
-        localStorage.setItem('dashboard_credentials', JSON.stringify(creds))
-        setCredentials(creds)
+      updateCredentials: async (creds: { username: string; password: string }) => {
+        const hash = await sha256(creds.password)
+        localStorage.setItem('dashboard_credentials', JSON.stringify({ username: creds.username, passwordHash: hash }))
+        setCredentials({ username: creds.username, passwordHash: hash })
       },
     }),
     [isAuthenticated, credentials],
