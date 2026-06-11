@@ -338,28 +338,40 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       const cArr = (data.clients || []) as ClientItem[]
       const pArr = (data.properties || []) as PropertyItem[]
       const rArr = (data.requests || []) as RequestItem[]
-      // Merge cloud items into local (preserve local-only items)
+      // Merge cloud items into local (preserve local-only items, dedup by content)
+      const contentKey = (item: any) => {
+        if (item.clientName || item.ownerName) return `${item.clientName||item.ownerName}|${item.propertyTitle||item.title}|${item.propertyPrice||item.price}`
+        if (item.name) return `client|${item.name}|${item.phone}`
+        return `${item.id}`
+      }
       const merge = async (cloud: ClientItem[] | PropertyItem[] | RequestItem[], local: any[], setter: (v: any) => void, add: (v: any) => Promise<void>) => {
         const localIds = new Set(local.map(x => x.id))
+        const localKeys = new Set(local.map(x => contentKey(x)))
         let changed = false
         for (const item of cloud) {
-          if (!localIds.has(item.id)) { await add(item); changed = true }
-          else {
+          const key = contentKey(item)
+          if (!localIds.has(item.id) && !localKeys.has(key)) { await add(item); changed = true }
+          else if (localIds.has(item.id)) {
             const idx = local.findIndex(x => x.id === item.id)
             if (idx >= 0 && JSON.stringify(item) !== JSON.stringify(local[idx])) { await add(item); changed = true }
           }
         }
         if (changed) {
           const merged = [...local]
-          const mergedIds = new Set(local.map(x => x.id))
-          for (const item of cloud) {
-            if (!mergedIds.has(item.id)) merged.push(item)
-            else {
-              const idx = local.findIndex(x => x.id === item.id)
-              if (idx >= 0 && JSON.stringify(item) !== JSON.stringify(local[idx])) merged[idx] = item
-            }
+          const seen = new Map<string, number>()
+          const deduped: any[] = []
+          for (const item of merged) {
+            const key = contentKey(item)
+            if (!seen.has(key)) { seen.set(key, deduped.length); deduped.push(item) }
+            else { const idx = seen.get(key)!; if (JSON.stringify(item) !== JSON.stringify(deduped[idx])) deduped[idx] = item }
           }
-          setter(merged as any)
+          const mergedIds = new Set(local.map(x => x.id))
+          const mergedKeys = new Set(local.map(x => contentKey(x)))
+          for (const item of cloud) {
+            const key = contentKey(item)
+            if (!mergedIds.has(item.id) && !mergedKeys.has(key)) { deduped.push(item); mergedIds.add(item.id); mergedKeys.add(key) }
+          }
+          setter(deduped as any)
         }
       }
       const [cCur, pCur, rCur] = await Promise.all([DB.getAllClients(), DB.getAllProperties(), DB.getAllRequests()])
